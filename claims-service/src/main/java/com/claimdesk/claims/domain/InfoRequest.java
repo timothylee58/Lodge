@@ -28,7 +28,7 @@ public class InfoRequest {
     }
 
     public void answer(String response) {
-        if (status != InfoRequestStatus.OPEN) throw new IllegalStateException("Info request already answered");
+        if (status != InfoRequestStatus.OPEN) throw new BusinessConflictException("Info request already answered");
         this.response = response;
         this.status = InfoRequestStatus.ANSWERED;
         this.answeredAt = Instant.now();

@@ -16,6 +16,9 @@ public class OutboxEvent {
     @JdbcTypeCode(SqlTypes.JSON) private String payload;
     private Instant createdAt;
     private Instant publishedAt;
+    private int attempts;
+    private String lastError;
+    private Instant deadAt;
 
     protected OutboxEvent() {}
 
@@ -29,6 +32,17 @@ public class OutboxEvent {
     }
 
     public void markPublished() { this.publishedAt = Instant.now(); }
+
+    /** Counts a non-retriable failure; after maxAttempts the row is dead-lettered (skipped, kept for inspection). */
+    public void recordFailure(String error, int maxAttempts) {
+        this.attempts++;
+        this.lastError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+        if (attempts >= maxAttempts) this.deadAt = Instant.now();
+    }
+
+    public boolean isDead() { return deadAt != null; }
+    public int getAttempts() { return attempts; }
+    public String getLastError() { return lastError; }
     public UUID getId() { return id; }
     public UUID getAggregateId() { return aggregateId; }
     public String getTopic() { return topic; }

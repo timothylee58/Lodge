@@ -81,7 +81,7 @@ public class ClaimCommandService {
         if (!claim.getClaimantId().equals(claimantId)) throw new EntityNotFoundException("Claim " + claimId);
         claim.infoProvided(); // 409 unless PENDING_INFO
         var open = infoRequests.findFirstByClaimIdAndStatus(claimId, InfoRequestStatus.OPEN)
-                .orElseThrow(() -> new IllegalStateException("No open information request"));
+                .orElseThrow(() -> new BusinessConflictException("No open information request"));
         open.answer(response);
         flushAndRecord(claim, "INFO_PROVIDED", claimantId, Map.of("response", response));
         return claim;

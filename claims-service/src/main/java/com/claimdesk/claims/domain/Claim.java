@@ -81,7 +81,7 @@ public class Claim {
     }
 
     public void adjustReserve(BigDecimal reserve) {
-        if (!status.isOpen()) throw new IllegalStateException("Cannot change reserve on a closed claim");
+        if (!status.isOpen()) throw new BusinessConflictException("Cannot change reserve on a closed claim");
         requireNonNegative(reserve);
         this.reserveAmount = reserve;
         this.updatedAt = Instant.now();

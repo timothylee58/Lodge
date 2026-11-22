@@ -19,9 +19,11 @@ claimdesk:
   outbox:
     topic: claims.events
     poll-ms: 1000
+    max-attempts: 3   # non-retriable publish failures before a row is dead-lettered
   jwt:
-    # Dev-only default. Override with JWT_SECRET (>= 32 bytes) outside your laptop.
-    secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes!!}
+    # No default on purpose: the app refuses to start without JWT_SECRET (>= 32 bytes).
+    # Local dev: run with SPRING_PROFILES_ACTIVE=dev (see application-dev.yml).
+    secret: ${JWT_SECRET}
     ttl-minutes: 120
 
 management.endpoints.web.exposure.include: health,info,metrics

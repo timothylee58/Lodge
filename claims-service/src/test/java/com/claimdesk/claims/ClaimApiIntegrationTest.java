@@ -1,5 +1,7 @@
 package com.claimdesk.claims;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -25,6 +28,9 @@ import java.util.*;
 import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 /** Needs Docker (Testcontainers): real Postgres + Kafka. Seed users all have password "password". */
@@ -43,10 +49,12 @@ class ClaimApiIntegrationTest {
         r.add("spring.datasource.password", pg::getPassword);
         r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         r.add("claimdesk.outbox.poll-ms", () -> "200");
+        r.add("claimdesk.jwt.secret", () -> "integration-test-secret-0123456789-abcdefghij");
     }
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @SpyBean ObjectMapper json;
 
     static final String MOTOR_POLICY = "10000000-0000-0000-0000-000000000001"; // limit 50 000, holder Aina
 
@@ -65,14 +73,14 @@ class ClaimApiIntegrationTest {
     }
 
     int status(MvcResult r) { return r.getResponse().getStatus(); }
-    String json(MvcResult r) throws Exception { return r.getResponse().getContentAsString(); }
+    String body(MvcResult r) throws Exception { return r.getResponse().getContentAsString(); }
 
     String submitClaim(String claimantToken) throws Exception {
         var r = call(post("/api/claims"), claimantToken, """
                 {"policyId":"%s","incidentDate":"%s","description":"Rear-ended at junction"}"""
                 .formatted(MOTOR_POLICY, LocalDate.now().minusDays(1)));
         assertThat(status(r)).isEqualTo(201);
-        return JsonPath.read(json(r), "$.claim.id");
+        return JsonPath.read(body(r), "$.claim.id");
     }
 
     String staff(String id, String action) { return "/api/staff/claims/" + id + "/" + action; }
@@ -86,10 +94,13 @@ class ClaimApiIntegrationTest {
         var bad = call(post("/api/auth/login"), null, "{\"email\":\"aina@demo.local\",\"password\":\"nope\"}");
         assertThat(status(bad)).isEqualTo(401);
         var unknown = call(post("/api/auth/login"), null, "{\"email\":\"ghost@demo.local\",\"password\":\"nope\"}");
-        assertThat(json(unknown)).isEqualTo(json(bad)); // no user enumeration
+        assertThat(body(unknown)).isEqualTo(body(bad)); // no user enumeration
 
         var aina = login("aina@demo.local");
         assertThat(status(call(get("/api/staff/claims"), aina, null))).as("claimant on staff API").isEqualTo(403);
+
+        assertThat(status(call(get("/api/does-not-exist"), aina, null))).as("framework 404 must not become 500").isEqualTo(404);
+        assertThat(status(call(post("/api/claims"), aina, "{}"))).as("validation").isEqualTo(400);
 
         var mark = login("mark@demo.local");
         var id = submitClaim(aina);
@@ -106,7 +117,7 @@ class ClaimApiIntegrationTest {
 
         var assign = call(post(staff(id, "assign")), wei, null);
         assertThat(status(assign)).isEqualTo(200);
-        assertThat((String) JsonPath.read(json(assign), "$.claim.status")).isEqualTo("UNDER_REVIEW");
+        assertThat((String) JsonPath.read(body(assign), "$.claim.status")).isEqualTo("UNDER_REVIEW");
 
         assertThat(status(call(post(staff(id, "info-requests")), wei, "{\"question\":\"Police report number?\"}"))).isEqualTo(200);
         assertThat(status(call(post("/api/claims/" + id + "/info-responses"), aina, "{\"response\":\"PDRM/1234\"}"))).isEqualTo(200);
@@ -119,11 +130,11 @@ class ClaimApiIntegrationTest {
         assertThat(status(call(post(staff(id, "settle")), wei, "{\"amount\":60000}"))).as("settlement above limit").isEqualTo(400);
         var settled = call(post(staff(id, "settle")), wei, "{\"amount\":7500}");
         assertThat(status(settled)).isEqualTo(200);
-        assertThat((String) JsonPath.read(json(settled), "$.claim.status")).isEqualTo("SETTLED");
+        assertThat((String) JsonPath.read(body(settled), "$.claim.status")).isEqualTo("SETTLED");
         assertThat(status(call(patch(staff(id, "reserve")), wei, "{\"reserveAmount\":1}"))).as("closed claim").isEqualTo(409);
 
         // Claimant view: no reserve figures anywhere, but sees the payout and the full story.
-        var view = json(call(get("/api/claims/" + id), aina, null));
+        var view = body(call(get("/api/claims/" + id), aina, null));
         assertThat((Object) JsonPath.read(view, "$.claim.reserveAmount")).isNull();
         assertThat(((Number) JsonPath.read(view, "$.claim.settledAmount")).doubleValue()).isEqualTo(7500.0);
         List<String> types = JsonPath.read(view, "$.timeline[*].type");
@@ -132,7 +143,7 @@ class ClaimApiIntegrationTest {
         assertThat(view).doesNotContain("reserveAmount\":8000").doesNotContain("9000");
 
         // Staff view keeps it.
-        List<String> staffTypes = JsonPath.read(json(call(get("/api/claims/" + id), wei, null)), "$.timeline[*].type");
+        List<String> staffTypes = JsonPath.read(body(call(get("/api/claims/" + id), wei, null)), "$.timeline[*].type");
         assertThat(staffTypes).contains("RESERVE_CHANGED").hasSize(7);
 
         // Outbox: one row per event, all eventually published, and Kafka sees them in version order.
@@ -198,9 +209,34 @@ class ClaimApiIntegrationTest {
         var eve = login("eve@demo.local");
         assertThat(status(call(get("/api/claims/" + id), eve, null))).isEqualTo(404);
         assertThat(status(call(post("/api/claims/" + id + "/info-responses"), eve, "{\"response\":\"hi\"}"))).isEqualTo(404);
-        assertThat(json(call(get("/api/claims"), eve, null))).isEqualTo("[]");
+        assertThat(body(call(get("/api/claims"), eve, null))).isEqualTo("[]");
         var submitOnAinasPolicy = call(post("/api/claims"), eve,
                 "{\"policyId\":\"%s\",\"incidentDate\":\"%s\",\"description\":\"x\"}".formatted(MOTOR_POLICY, LocalDate.now()));
         assertThat(status(submitOnAinasPolicy)).as("someone else's policy").isEqualTo(404);
+    }
+
+    @Test
+    void serialisationFailureRollsBackTheClaimChangeAndReturns500() throws Exception {
+        var id = submitClaim(login("aina@demo.local"));
+        var wei = login("wei@demo.local");
+        var uuid = UUID.fromString(id);
+
+        doThrow(new JsonProcessingException("boom-internal-detail") {}).when(json).writeValueAsString(any());
+        MvcResult failed;
+        try {
+            failed = call(post(staff(id, "assign")), wei, null);
+        } finally {
+            reset(json);
+        }
+
+        assertThat(status(failed)).isEqualTo(500);
+        assertThat(body(failed)).doesNotContain("boom-internal-detail");
+        // Atomicity: no half-applied change, no timeline row, no outbox row for the failed command.
+        assertThat(jdbc.queryForObject("select status from claim where id=?", String.class, uuid)).isEqualTo("SUBMITTED");
+        assertThat(jdbc.queryForObject("select assignee_id from claim where id=?", UUID.class, uuid)).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from claim_event where claim_id=?", Integer.class, uuid)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where aggregate_id=?", Integer.class, uuid)).isEqualTo(1);
+        // ...and the claim is still perfectly usable.
+        assertThat(status(call(post(staff(id, "assign")), wei, null))).isEqualTo(200);
     }
 }

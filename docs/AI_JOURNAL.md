@@ -24,3 +24,11 @@ Challenged: draft query mapping passed duplicated/garbled settled-amount args to
 Decision: claimants get 404 (not 403) for other people's claims/policies, so ids can't be probed. Claimants never see reserve figures or RESERVE_CHANGED events.
 Tooling: Docker 29 rejects Testcontainers <=1.21.3's client API version; 1.21.4 works (pinned). ITs need Docker.
 Not covered by a test yet: forced serialisation failure rolling back the claim change (outbox atomicity); known gap.
+
+## Hardening pass (before block 4)
+Asked: fix the three open issues from block 3 (poison outbox row, 409-vs-500, default JWT secret).
+Challenged: the obvious fix for the poison row — "dead-letter after N failures" — would have dead-lettered every healthy row during a broker outage, since each tick fails on the first row. Overrode: classify errors; retriable (timeout, broker down) never counts an attempt, only non-retriable ones do. Unit test runs 10 ticks of outage and asserts zero attempts.
+Challenged: a catch-all `@ExceptionHandler(Exception.class)` on an advice that doesn't extend ResponseEntityExceptionHandler would turn framework 404/405/400 into 500. Overrode: extend it; added assertions for unknown-route 404 and validation 400.
+Fixed: blanket `IllegalStateException -> 409` replaced by an explicit `BusinessConflictException`; real bugs now return a generic 500 and log the detail. This also closed the earlier test gap: a forced serialisation failure now proves the claim change, timeline row and outbox row all roll back.
+Fixed: JWT secret has no default in base config (app won't start without it); `dev` profile carries a clearly-labelled local value.
+Trade-off recorded: dead-lettering skips an event for that claim; consumers self-heal because events are full snapshots with a version.
