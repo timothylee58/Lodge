@@ -1,0 +1,11 @@
+target/
+node_modules/
+dist/
+.angular/
+.env
+.idea/
+.DS_Store
+*.log
+
+# Working brief, not part of the deliverable
+Lodge PRD*.md
