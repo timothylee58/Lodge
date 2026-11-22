@@ -23,7 +23,11 @@ public class SecurityConfig {
     SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtFilter) throws Exception {
         return http.csrf(c -> c.disable())   // stateless bearer-token API, no cookies
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                .exceptionHandling(e -> e
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                        // Set the status directly. The default handler uses sendError(), which forwards to the
+                        // (unauthenticated) /error page and turns a 403 into a 401 on a real servlet container.
+                        .accessDeniedHandler((req, res, ex) -> res.setStatus(HttpStatus.FORBIDDEN.value())))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/auth/login", "/actuator/health", "/v3/api-docs/**",
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()

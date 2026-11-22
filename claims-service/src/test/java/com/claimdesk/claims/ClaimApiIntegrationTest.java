@@ -6,6 +6,11 @@ import com.jayway.jsonpath.JsonPath;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -34,7 +39,7 @@ import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 /** Needs Docker (Testcontainers): real Postgres + Kafka. Seed users all have password "password". */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @Testcontainers
 class ClaimApiIntegrationTest {
@@ -52,6 +57,7 @@ class ClaimApiIntegrationTest {
         r.add("claimdesk.jwt.secret", () -> "integration-test-secret-0123456789-abcdefghij");
     }
 
+    @LocalServerPort int port;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @SpyBean ObjectMapper json;
@@ -238,5 +244,15 @@ class ClaimApiIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from outbox_event where aggregate_id=?", Integer.class, uuid)).isEqualTo(1);
         // ...and the claim is still perfectly usable.
         assertThat(status(call(post(staff(id, "assign")), wei, null))).isEqualTo(200);
+    }
+
+    /** MockMvc skips the servlet container's error dispatch, so it can't catch a 403 that turns into 401 via /error. */
+    @Test
+    void roleDenialIsA403OnARealServerNotA401() throws Exception {
+        var req = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/staff/claims"))
+                .header("Authorization", "Bearer " + login("aina@demo.local")).build();
+        assertThat(HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.discarding()).statusCode()).as("claimant on staff API").isEqualTo(403);
+        var anon = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/staff/claims")).build();
+        assertThat(HttpClient.newHttpClient().send(anon, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(401);
     }
 }
