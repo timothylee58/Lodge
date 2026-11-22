@@ -32,3 +32,12 @@ Challenged: a catch-all `@ExceptionHandler(Exception.class)` on an advice that d
 Fixed: blanket `IllegalStateException -> 409` replaced by an explicit `BusinessConflictException`; real bugs now return a generic 500 and log the detail. This also closed the earlier test gap: a forced serialisation failure now proves the claim change, timeline row and outbox row all roll back.
 Fixed: JWT secret has no default in base config (app won't start without it); `dev` profile carries a clearly-labelled local value.
 Trade-off recorded: dead-lettering skips an event for that claim; consumers self-heal because events are full snapshots with a version.
+
+## Block 4 — reporting-service
+Asked: Kafka consumer + exposure/workload projections + manager-only reports + tests.
+Accepted: version-guarded upsert as the real idempotency/ordering mechanism (`WHERE stored.version < incoming.version`), with `processed_event` as the exact-duplicate guard in the same transaction; JDBC instead of JPA (read model, plain SQL aggregates); own Postgres schema instead of a second database to keep local setup to one container.
+Challenged: first instinct was to let a failing message retry forever via the default error handler — the consumer-side twin of the poison outbox row. Overrode: `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`, `PoisonEventException` is non-retryable, DLT partition -1 so it needn't match the source topic's partition count. Test sends garbage, then a valid event on the same key, and asserts the valid one is projected and the garbage is in the DLT.
+Challenged: hand-built test JSON proves nothing about the real contract. Overrode: ran claims-service and reporting-service together against real Kafka and drove a claim through approve and settle over REST; exposure went 0 -> 8000 -> 0 and workload followed.
+Found by that real run (not by any MockMvc test): role-denied requests returned **401, not 403** on a real server. The default AccessDeniedHandler uses sendError(), the container forwards to /error, which is unauthenticated, so Spring Security answers 401. Affected claims-service too (its ITs only used MockMvc, which has no error dispatch). Fix: set the status directly in an accessDeniedHandler; added a RANDOM_PORT test in both services that fails without it (verified: red before, green after).
+Caught myself: JsonPath filter + `[0]` returns a nested array; test helper fixed, not the assertion weakened.
+Scope additions beyond the PRD list: `/api/reports/claims-by-status` (the dashboard needs open-by-status-and-market).

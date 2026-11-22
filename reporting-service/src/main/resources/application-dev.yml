@@ -1,0 +1,4 @@
+# Local development ONLY (SPRING_PROFILES_ACTIVE=dev). Must match claims-service's dev secret so its tokens verify here.
+reporting:
+  jwt:
+    secret: ${JWT_SECRET:local-dev-only-secret-not-for-deploy-0123456789}

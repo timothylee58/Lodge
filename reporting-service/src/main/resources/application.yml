@@ -1,0 +1,29 @@
+server:
+  port: 8081
+
+spring:
+  application.name: reporting-service
+  datasource:
+    # Same Postgres instance as claims-service, but its OWN schema: this service never reads claims tables.
+    # In production this would be a separate database (or store) — the schema split keeps local setup to one container.
+    url: jdbc:postgresql://localhost:5432/claimdesk?currentSchema=reporting
+    username: claimdesk
+    password: claimdesk
+  flyway:
+    enabled: true
+    schemas: reporting
+  mvc.problemdetails.enabled: true
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: reporting-service
+      auto-offset-reset: earliest   # new group / reset offsets => full replay rebuilds the read model
+
+reporting:
+  topic: claims.events
+  jwt:
+    # No default on purpose: refuses to start without JWT_SECRET (same value as claims-service).
+    # Local dev: SPRING_PROFILES_ACTIVE=dev (see application-dev.yml).
+    secret: ${JWT_SECRET}
+
+management.endpoints.web.exposure.include: health,info,metrics

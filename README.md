@@ -3,7 +3,7 @@
 Claims intake and handling: claimants report incidents and track them, officers work a queue, managers see exposure.
 Backend-first; see `docs/adr/0001-modular-monolith-plus-reporting.md` and `docs/AI_JOURNAL.md`.
 
-## Run locally (claims-service)
+## Run locally
 
 ```bash
 docker compose up -d                      # Postgres + Kafka (infra only)
@@ -12,7 +12,18 @@ SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run   # or run from your IDE with 
 open http://localhost:8080/swagger-ui.html
 ```
 
-`JWT_SECRET` (>= 32 bytes) is **required**; the app refuses to start without it. The `dev` profile supplies a
+In a second terminal, the read side (Kafka consumer + reports on port 8081):
+
+```bash
+cd reporting-service
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+```
+
+Reports (manager token from `mark@demo.local`): `GET :8081/api/reports/exposure`, `/workload`, `/claims-by-status`.
+Each response has `asOf` (freshness of the data) and `generatedAt`. reporting-service keeps its tables in the
+`reporting` schema of the same Postgres and never reads claims tables.
+
+`JWT_SECRET` (>= 32 bytes, identical for both services) is **required**; the app refuses to start without it. The `dev` profile supplies a
 throwaway local value (`application-dev.yml`). Anywhere else, set `JWT_SECRET` in the environment.
 
 Demo users (password `password`): `aina@demo.local` (claimant), `wei@demo.local` / `priya@demo.local` (officers),
@@ -24,7 +35,7 @@ Ports: Postgres `5432` and Kafka `9092` are published; if 5432 is already in use
 ## Tests
 
 ```bash
-cd claims-service && ./mvnw test
+(cd claims-service && ./mvnw test) && (cd reporting-service && ./mvnw test)
 ```
 
 Integration tests use Testcontainers (real Postgres + Kafka) and need Docker. With Docker 29+, Testcontainers
@@ -35,3 +46,4 @@ Integration tests use Testcontainers (real Postgres + Kafka) and need Docker. Wi
 - Outbox rows that fail with a non-retriable error are dead-lettered after 3 attempts (`outbox_event.dead_at`):
   `SELECT id, event_type, attempts, last_error FROM outbox_event WHERE dead_at IS NOT NULL;`
 - Broker outages are retriable: the publisher waits and retries without counting attempts.
+- Poison messages on the consumer side land in `claims.events.DLT`. See `docs/ARCHITECTURE.md` for guarantees and gaps.
