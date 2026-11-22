@@ -29,6 +29,11 @@ lodge:
     rate-limit-per-minute: 10   # login attempts per client IP per minute (checked before any password work)
     max-failures: 5             # consecutive failures per email before lockout
     lock-minutes: 15
+  sla:                          # time allowed IN each status, in hours
+    submitted-hours: 24         # pick up
+    under-review-hours: 120     # decide (5 days)
+    pending-info-hours: 168     # claimant answers (7 days) - a breach means chase the claimant
+    approved-hours: 72          # settle (3 days)
   jwt:
     # No default on purpose: the app refuses to start without JWT_SECRET (>= 32 bytes).
     # Local dev: run with SPRING_PROFILES_ACTIVE=dev (see application-dev.yml).

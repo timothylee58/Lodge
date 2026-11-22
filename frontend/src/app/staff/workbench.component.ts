@@ -7,6 +7,7 @@ import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { ClaimDetail } from '../core/models';
 import { StatusBadgeComponent } from '../shared/status-badge.component';
+import { SlaChipComponent } from '../shared/sla-chip.component';
 import { TimelineComponent } from '../shared/timeline.component';
 import { money, problem, when } from '../shared/format';
 import { MATERIAL } from '../shared/material';
@@ -16,13 +17,13 @@ type Action = 'info' | 'approve' | 'reject' | 'settle' | 'reserve' | null;
 @Component({
   selector: 'lg-workbench',
   standalone: true,
-  imports: [FormsModule, RouterLink, StatusBadgeComponent, TimelineComponent, ...MATERIAL],
+  imports: [FormsModule, RouterLink, StatusBadgeComponent, SlaChipComponent, TimelineComponent, ...MATERIAL],
   template: `
     <a class="text-sm no-underline" routerLink="/queue">← Queue</a>
     @if (detail(); as d) {
       <div class="flex flex-wrap items-center justify-between gap-4">
         <h1 class="text-2xl">{{ d.claim.claimNumber }} <span class="text-slate-500">· {{ d.claim.market }} {{ d.claim.type }}</span></h1>
-        <lg-status [status]="d.claim.status" />
+        <div class="flex items-center gap-2"><lg-sla [sla]="d.claim.sla" [status]="d.claim.status" [dueAt]="d.claim.slaDueAt" /><lg-status [status]="d.claim.status" /></div>
       </div>
       @if (busy()) { <mat-progress-bar mode="indeterminate" /> }
 
@@ -36,6 +37,7 @@ type Action = 'info' | 'approve' | 'reject' | 'settle' | 'reserve' | null;
               <dt class="text-slate-500">Reserve</dt><dd class="m-0 tabular-nums">{{ money(d.claim.reserveAmount, d.claim.currency) }}</dd>
               @if (d.claim.settledAmount != null) { <dt class="text-slate-500">Settled</dt><dd class="m-0 tabular-nums">{{ money(d.claim.settledAmount, d.claim.currency) }}</dd> }
               <dt class="text-slate-500">Reported</dt><dd class="m-0">{{ when(d.claim.createdAt) }}</dd>
+              @if (d.claim.slaDueAt) { <dt class="text-slate-500">Target</dt><dd class="m-0">{{ when(d.claim.slaDueAt) }}</dd> }
             </dl>
             <p class="whitespace-pre-wrap">{{ d.claim.description }}</p>
           </mat-card>

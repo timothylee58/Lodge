@@ -21,14 +21,21 @@ public class StaffClaimController {
         this.commands = commands; this.queries = queries;
     }
 
-    /** assignee = me | unassigned | <uuid> */
+    /** assignee = me | unassigned | <uuid>; sort = oldest (default) | waiting (longest in current status) */
     @GetMapping
     public PageResponse<ClaimSummary> queue(@RequestParam(required = false) ClaimStatus status,
                                             @RequestParam(required = false) String assignee,
                                             @RequestParam(defaultValue = "0") int page,
                                             @RequestParam(defaultValue = "20") int size,
+                                            @RequestParam(defaultValue = "oldest") String sort,
                                             @AuthenticationPrincipal AuthenticatedUser me) {
-        return queries.queue(status, assignee, me.id(), page, size);
+        return queries.queue(status, assignee, me.id(), page, size, sort);
+    }
+
+    /** Overdue / due-soon / on-track counts for "my claims" and "unassigned". */
+    @GetMapping("/summary")
+    public QueueSummary summary(@AuthenticationPrincipal AuthenticatedUser me) {
+        return queries.queueSummary(me.id(), me.role() == com.lodge.claims.domain.Role.OFFICER);
     }
 
     @PostMapping("/{id}/assign")

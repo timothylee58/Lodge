@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { ClaimDetail, ClaimStatus, ClaimSummary, ExposureReport, Page, Policy, StatusReport, WorkloadReport } from './models';
+import { ClaimDetail, ClaimStatus, ClaimSummary, ExposureReport, Page, Policy, QueueSummary, StatusReport, WorkloadReport } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -16,12 +16,13 @@ export class ApiService {
   respond(id: string, response: string) { return this.http.post<ClaimDetail>(`/api/claims/${id}/info-responses`, { response }); }
 
   // staff
-  queue(opts: { status?: ClaimStatus | ''; assignee?: string; page: number; size: number }) {
-    let params = new HttpParams().set('page', opts.page).set('size', opts.size);
+  queue(opts: { status?: ClaimStatus | ''; assignee?: string; page: number; size: number; sort?: 'oldest' | 'waiting' }) {
+    let params = new HttpParams().set('page', opts.page).set('size', opts.size).set('sort', opts.sort ?? 'oldest');
     if (opts.status) params = params.set('status', opts.status);
     if (opts.assignee) params = params.set('assignee', opts.assignee);
     return this.http.get<Page<ClaimSummary>>('/api/staff/claims', { params });
   }
+  queueSummary() { return this.http.get<QueueSummary>('/api/staff/claims/summary'); }
   private staff(id: string, action: string, body: unknown = {}) {
     return this.http.post<ClaimDetail>(`/api/staff/claims/${id}/${action}`, body);
   }

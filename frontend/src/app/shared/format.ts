@@ -47,3 +47,12 @@ export function todayIso(): string {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
+
+/** Compact age: "45m", "5h", "3d". */
+export function age(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return '—';
+  const mins = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}

@@ -117,8 +117,13 @@ Next step: server-sent events instead of polling.
 - The manager's dashboard shows **workload per officer** (reviewing / waiting for info / approved / total open) and how
   many claims are waiting for an officer.
 
+- **Claim age and SLA** (added): each claim shows its age and time in the current status, and an SLA chip against a
+  per-status target (pick up 24 h, decide 5 d, claimant answers 7 d, settle 3 d; configurable under `lodge.sla.*`).
+  While waiting on the claimant a breach reads "Chase claimant", not "Overdue". The queue sorts by longest waiting and
+  shows overdue / due-soon counts for "my claims" and "waiting for an officer" (`GET /api/staff/claims/summary`).
+  SLA is computed server-side (`SlaPolicy`) so every screen and any future alert use one clock and one answer.
+
 **Not built, and what I would add next:**
-- **Claim age and SLA indicators** (days open, days waiting on the claimant), with the queue sortable by them.
 - Filtering by the officer's **market** (officers can currently see every market's claims).
 - Reassignment by a manager, for when an officer is away.
 - A personal count on the officer's own screen ("you have 3 waiting for your decision").

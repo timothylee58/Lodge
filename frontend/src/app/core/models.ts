@@ -1,5 +1,8 @@
 // Mirrors the backend DTOs (claims-service + reporting-service). Next step: generate from the OpenAPI spec.
 export type Role = 'CLAIMANT' | 'OFFICER' | 'MANAGER';
+export type SlaState = 'ON_TRACK' | 'DUE_SOON' | 'BREACHED' | 'NONE';
+export interface SlaCounts { breached: number; dueSoon: number; onTrack: number; }
+export interface QueueSummary { mine: SlaCounts; unassigned: SlaCounts; }
 export type ClaimStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'PENDING_INFO' | 'APPROVED' | 'SETTLED' | 'REJECTED';
 
 export interface Session { token: string; userId: string; name: string; role: Role; expiresAt: number; }
@@ -12,6 +15,8 @@ export interface ClaimSummary {
   id: string; claimNumber: string; status: ClaimStatus; type: string; market: string; incidentDate: string;
   description: string; reserveAmount: number | null; settledAmount: number | null; currency: string;
   assigneeId: string | null; assigneeName: string | null; createdAt: string; updatedAt: string; version: number;
+  /** Staff only (null for claimants). */
+  statusChangedAt: string | null; sla: SlaState | null; slaDueAt: string | null;
 }
 
 export interface TimelineEntry { type: string; at: string; actorId: string; detail: Record<string, unknown>; }

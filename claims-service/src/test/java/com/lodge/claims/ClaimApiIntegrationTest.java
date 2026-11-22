@@ -438,4 +438,49 @@ class ClaimApiIntegrationTest {
         assertThat(status(badAssignee)).isEqualTo(400);
         assertThat(body(badAssignee)).contains("assignee must be").doesNotContain("Invalid UUID string");
     }
+
+    // ---------- claim age and SLA ----------
+
+    void backdate(String claimId, String interval) {
+        jdbc.update("update claim set status_changed_at = now() - cast(? as interval), created_at = now() - cast(? as interval) where id = ?",
+                interval, interval, UUID.fromString(claimId));
+    }
+
+    @Test
+    void queueShowsSlaStateSortsByLongestWaitingAndSummarisesOverdueWork() throws Exception {
+        var aina = login("aina@demo.local");
+        var wei = login("wei@demo.local");
+        var fresh = submitClaim(aina);
+        var stale = submitClaim(aina);
+        var dueSoon = submitClaim(aina);
+        backdate(stale, "3 days");     // SUBMITTED target 24h -> breached
+        backdate(dueSoon, "20 hours"); // 20/24 >= 75% -> due soon
+
+        var page = body(call(get("/api/staff/claims?assignee=unassigned&status=SUBMITTED&sort=waiting&size=100"), wei, null));
+        List<String> ids = JsonPath.read(page, "$.content[*].id");
+        assertThat(ids.indexOf(stale)).as("longest waiting first").isLessThan(ids.indexOf(dueSoon));
+        assertThat(ids.indexOf(dueSoon)).isLessThan(ids.indexOf(fresh));
+        assertThat(JsonPath.<List<String>>read(page, "$.content[?(@.id=='" + stale + "')].sla")).containsExactly("BREACHED");
+        assertThat(JsonPath.<List<String>>read(page, "$.content[?(@.id=='" + dueSoon + "')].sla")).containsExactly("DUE_SOON");
+        assertThat(JsonPath.<List<String>>read(page, "$.content[?(@.id=='" + fresh + "')].sla")).containsExactly("ON_TRACK");
+
+        var before = body(call(get("/api/staff/claims/summary"), wei, null));
+        int breachedUnassigned = JsonPath.read(before, "$.unassigned.breached");
+        assertThat(breachedUnassigned).isGreaterThanOrEqualTo(1);
+
+        // Picking up the stale claim resets its clock (new status) and moves it into "mine".
+        assertThat(status(call(post(staff(stale, "assign")), wei, null))).isEqualTo(200);
+        var after = body(call(get("/api/staff/claims/summary"), wei, null));
+        assertThat((int) JsonPath.read(after, "$.unassigned.breached")).isEqualTo(breachedUnassigned - 1);
+        assertThat((int) JsonPath.read(after, "$.mine.onTrack")).isGreaterThanOrEqualTo(1);
+
+        // Claimants never receive SLA or reserve figures.
+        var claimantView = body(call(get("/api/claims/" + stale), aina, null));
+        assertThat((Object) JsonPath.read(claimantView, "$.claim.sla")).isNull();
+        assertThat((Object) JsonPath.read(claimantView, "$.claim.statusChangedAt")).isNull();
+        // Managers can read the summary (no "mine" slice for them).
+        var mark = login("mark@demo.local");
+        assertThat((int) JsonPath.read(body(call(get("/api/staff/claims/summary"), mark, null)), "$.mine.onTrack")).isZero();
+        assertThat(status(call(get("/api/staff/claims/summary"), aina, null))).isEqualTo(403);
+    }
 }

@@ -22,7 +22,7 @@ Open **http://localhost:4200** and sign in with a demo account (password `passwo
 | Role | Email | What to try |
 |---|---|---|
 | Claimant | `aina@demo.local` | Report an incident, answer an information request, see the payout |
-| Claims officer (MY) | `wei@demo.local` | Pick up a claim, request info, approve with a reserve, settle |
+| Claims officer (MY) | `wei@demo.local` | Queue with claim age and SLA (overdue / due soon / on track), pick up, request info, approve, settle |
 | Claims officer (SG) | `priya@demo.local` | Race Wei for the same claim (one gets a friendly 409) |
 | Manager | `mark@demo.local` | Exposure by currency and market, officer workload, "data as of" freshness |
 
@@ -35,7 +35,7 @@ Demo accounts exist only in the `dev` profile and the tests; a default start cre
 | 1 | Git history showing the development process | `git log`: block-by-block feature commits, then review-driven `fix:` commits |
 | 2 | Working application, started locally | `docker compose up --build` (above) |
 | 3 | AI working journal: asked / accepted / challenged / overrode | [`docs/AI_JOURNAL.md`](docs/AI_JOURNAL.md); curated, evidence-linked view: [`docs/DIRECTION_LOG.md`](docs/DIRECTION_LOG.md) |
-| 4 | Supporting documentation | [`docs/DECOMPOSITION.md`](docs/DECOMPOSITION.md) (the seven decomposition questions), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr), [`docs/RUNBOOK.md`](docs/RUNBOOK.md), [`docs/PANEL_QA.md`](docs/PANEL_QA.md) |
+| 4 | Supporting documentation | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) (both user types in one app), [`docs/DECOMPOSITION.md`](docs/DECOMPOSITION.md) (the seven decomposition questions), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr), [`docs/RUNBOOK.md`](docs/RUNBOOK.md), [`docs/PANEL_QA.md`](docs/PANEL_QA.md) |
 
 **Panel questions** (why two services, Kafka down, concurrent assign, API contract, exposure staleness, rejected AI
 code) are answered with code and test references in [`docs/PANEL_QA.md`](docs/PANEL_QA.md).

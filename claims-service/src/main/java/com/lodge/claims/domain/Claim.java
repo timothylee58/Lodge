@@ -31,6 +31,7 @@ public class Claim {
 
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant statusChangedAt;
 
     protected Claim() {}
 
@@ -47,7 +48,7 @@ public class Claim {
         c.description = description;
         c.currency = currency;
         c.status = ClaimStatus.SUBMITTED;
-        c.createdAt = c.updatedAt = Instant.now();
+        c.createdAt = c.updatedAt = c.statusChangedAt = Instant.now();
         return c;
     }
 
@@ -92,7 +93,7 @@ public class Claim {
     private void transitionTo(ClaimStatus next) {
         if (!status.allowedNext().contains(next)) throw new InvalidTransitionException(status, next);
         this.status = next;
-        this.updatedAt = Instant.now();
+        this.updatedAt = this.statusChangedAt = Instant.now();
     }
 
     private static void requireNonNegative(BigDecimal v) {
@@ -115,4 +116,5 @@ public class Claim {
     public String getDescription() { return description; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getStatusChangedAt() { return statusChangedAt; }
 }

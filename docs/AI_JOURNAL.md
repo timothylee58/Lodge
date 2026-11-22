@@ -142,3 +142,15 @@ stopped being true when dead letters moved to a table. Rewrote the README as a f
 deliverables, architecture, tests, known gaps).
 Verified after the rename: claims 30/30, reporting 15/15, end-to-end 10/10. Existing local volumes need
 `docker compose down -v` (the database name changed).
+
+## Claim age and SLA in the officer queue (directed by me)
+Asked: add claim-age and SLA indicators so officers can manage workload; also show how both user types use one app.
+Accepted: one timestamp per claim (`status_changed_at`, set on every transition) instead of recomputing from the
+timeline; per-status targets in config; SLA computed on the server with an injected Clock so UI and future alerts agree.
+Challenged: a single "overdue" flag would blame the officer for a claim waiting on the claimant. Overrode: a breach in
+PENDING_INFO reads "Chase claimant". Picking up a claim resets the clock (new status), which a test asserts.
+Mistakes caught by the e2e run: Material renders single-select toggles as role=radio, so `getByRole('button')` never
+matched; then my own sed put a comment in front of `.click()`, silently commenting the click out. Both fixed; I read the
+line back instead of trusting the edit.
+Known limit: the summary loads the open slices and counts in Java; at volume it becomes a SQL aggregate.
+Verified: claims 33/33 (incl. backdated-claim SLA, sort, summary, claimant redaction), e2e 11/11, and a browser check.
