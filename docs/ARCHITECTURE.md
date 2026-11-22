@@ -28,7 +28,8 @@ Snapshots (not deltas) mean a lost or skipped event is repaired by the next one 
   only applies an event whose claim `version` is newer than the stored one, so late events cannot move a claim
   backwards. Both happen in one transaction. Unparseable/invalid messages are stored in `dead_letter` immediately
   (queryable, re-drivable or discardable via an ops API, exposed as a metric); transient DB errors retry twice first.
-  If recording fails the offset is not committed, so nothing is dropped.
+  The recorder sanitises what Postgres cannot store (NUL, oversize fields); data still rejected (SQLState 22/23) is
+  stored as coordinates only. Only database outages propagate: the offset is not committed and the record is redelivered.
 
 ## Consistency and staleness
 Reports are eventually consistent. Typical lag = outbox poll (1s) + consumer (sub-second). Every report returns
@@ -46,7 +47,9 @@ plus outbox lag) and have MANAGER-only list / re-drive / discard endpoints. Proc
 ## Security
 JWT (HS256, shared secret, no default; app refuses to start without `JWT_SECRET`). Roles: CLAIMANT, OFFICER,
 MANAGER. Role gates are URL-level; ownership ("my claim", "assigned to me") is enforced in services. Claimants get
-404 for others' claims and never see reserve figures. Reports and ops endpoints: MANAGER only; `/actuator` other than health too. Login is protected by a per-IP rate limit and a per-email lockout (see ADR-0002).
+404 for others' claims and never see reserve figures. Reports and ops endpoints: MANAGER only; `/actuator` other than health too. Login is protected by a per-IP rate limit and a per-email lockout (see ADR-0002). Emails are printable ASCII
+(validated and enforced by a DB constraint) so the throttle key and the account lookup are always the same string.
+`X-Forwarded-For` is used only from configured trusted proxies. Demo accounts exist only in `db/demo-seed` (dev/tests).
 Production path: OIDC (Keycloak / Azure AD) with JWKS instead of a shared secret: `docs/adr/0002-token-signing-and-oidc-path.md`.
 
 ## Known gaps (deliberate)

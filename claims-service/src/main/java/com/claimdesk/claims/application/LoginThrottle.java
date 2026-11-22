@@ -52,6 +52,10 @@ public class LoginThrottle {
         return e.length() > 200 ? e.substring(0, 200) : e;
     }
 
+    public static boolean isAscii(String s) {
+        return s.chars().allMatch(c -> c >= 0x21 && c <= 0x7E);
+    }
+
     /** @throws TooManyAttemptsException with the remaining lock time */
     public void assertNotLocked(String email) {
         var remaining = jdbc.queryForList("""

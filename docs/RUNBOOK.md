@@ -41,7 +41,9 @@ curl -s -X POST localhost:8081/api/ops/dead-letters/<id>/discard  -H "Authorizat
 Re-drive runs the stored payload through the same parser and idempotent projection as the live consumer (no Kafka round
 trip), so repeating it is harmless. A message that is still invalid returns 422 and stays listed with `lastError` and a
 bumped `redriveAttempts`; discard it once you are sure it cannot be fixed (e.g. genuinely malformed). Resolved rows are
-kept for audit. If recording a dead letter itself fails (DB down) the offset is not committed and the record is
+kept for audit. A row with an empty payload and an error starting `Unrecordable message` could not be stored as data;
+read the original from Kafka by partition/offset (`kafka-console-consumer.sh --topic claims.events --partition <P>
+--offset <O> --max-messages 1`) while it is within retention, then discard the row. If recording a dead letter itself fails (DB down) the offset is not committed and the record is
 redelivered, so nothing is dropped.
 
 ## 3. Rebuild the whole read model

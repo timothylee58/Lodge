@@ -1,3 +1,8 @@
+# Behind a reverse proxy / load balancer, the login rate limit must see the real client IP, not the proxy's.
+# Set both (env vars shown):  SERVER_FORWARD_HEADERS_STRATEGY=native
+#                             SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=<regex matching ONLY your proxy addresses>
+# Tomcat then takes the right-most untrusted X-Forwarded-For entry, so a client cannot spoof its way to a fresh bucket.
+# Off by default: without a proxy, X-Forwarded-For is client-controlled and must be ignored.
 spring:
   application.name: claims-service
   datasource:

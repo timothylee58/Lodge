@@ -2,3 +2,7 @@
 claimdesk:
   jwt:
     secret: ${JWT_SECRET:local-dev-only-secret-not-for-deploy-0123456789}
+spring:
+  flyway:
+    # Demo users and policies (password "password"). Dev and tests only — never add this location elsewhere.
+    locations: classpath:db/migration,classpath:db/demo-seed

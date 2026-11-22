@@ -40,7 +40,17 @@ Demo users (password `password`): `aina@demo.local` (claimant), `wei@demo.local`
 
 Kafka has two listeners (`kafka:19092` for containers, `localhost:9092` for your machine). Postgres defaults to host
 port 5432; set `POSTGRES_PORT` to move it (then use that port in `spring.datasource.url` for IDE runs).
-The compose services run the `dev` profile (throwaway local JWT secret) — local use only.
+The compose services run the `dev` profile (public throwaway JWT secret + demo users), so every port is bound to
+`127.0.0.1` only — nothing is reachable from your network.
+
+**Demo data is dev-only.** Demo users and policies live in `db/demo-seed` and load only when that Flyway location is
+enabled (the `dev` profile and the tests). A default (non-dev) start creates no accounts at all. If you have a database
+from before this change, reset it once with `docker compose down -v` (the old `V2__seed` migration no longer exists).
+
+**Behind a reverse proxy** (e.g. the frontend's nginx), set on claims-service `SERVER_FORWARD_HEADERS_STRATEGY=native`
+and `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=<regex of your proxy IPs>`, and have the proxy append the client address
+(`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Otherwise every user shares one login rate-limit
+bucket. Leave it off without a proxy: `X-Forwarded-For` is client-controlled.
 
 ## Tests
 

@@ -26,8 +26,11 @@ public class AuthService {
 
     public Result login(String rawEmail, String password) {
         var key = LoginThrottle.normalise(rawEmail);
+        // Defence in depth (the API already rejects these with 400): the throttle key and the lookup must be the same
+        // string, which is only guaranteed for ASCII.
+        if (!LoginThrottle.isAscii(key)) throw new BadCredentialsException("Invalid email or password");
         throttle.assertNotLocked(key); // same 429 for real and unknown emails
-        var user = users.findByEmailIgnoreCase(rawEmail.trim()).orElse(null);
+        var user = users.findByNormalisedEmail(key).orElse(null);
         boolean ok = encoder.matches(password, user == null ? dummyHash : user.getPassword());
         if (user == null || !ok) {
             throttle.recordFailure(key);

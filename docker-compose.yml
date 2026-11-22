@@ -2,7 +2,9 @@
 # IDE workflow: docker compose up -d postgres kafka   then run the services from your IDE (profile "dev").
 #
 # Kafka has two listeners: kafka:19092 for containers, localhost:9092 for processes on your machine.
-# The services run with the "dev" profile, which carries a throwaway local JWT secret. LOCAL USE ONLY.
+# The services run with the "dev" profile: a PUBLIC throwaway JWT secret and demo users with password "password".
+# That is why every port below is bound to 127.0.0.1 only: nothing here is reachable from your network.
+# LOCAL USE ONLY.
 x-service-env: &service-env
   SPRING_PROFILES_ACTIVE: dev
   SPRING_DATASOURCE_PASSWORD: claimdesk
@@ -15,7 +17,7 @@ services:
       POSTGRES_DB: claimdesk
       POSTGRES_USER: claimdesk
       POSTGRES_PASSWORD: claimdesk
-    ports: ["${POSTGRES_PORT:-5432}:5432"]   # set POSTGRES_PORT if 5432 is taken on your machine
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]   # set POSTGRES_PORT if 5432 is taken on your machine
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U claimdesk"]
@@ -24,7 +26,7 @@ services:
 
   kafka:
     image: apache/kafka:3.8.0
-    ports: ["9092:9092"]
+    ports: ["127.0.0.1:9092:9092"]
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -47,7 +49,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
     restart: on-failure
     environment:
       <<: *service-env
@@ -58,7 +60,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
-    ports: ["8081:8081"]
+    ports: ["127.0.0.1:8081:8081"]
     restart: on-failure
     environment:
       <<: *service-env

@@ -60,3 +60,19 @@ Challenged: replacing the Kafka DLT with a table is a design change to what bloc
 Mistake caught by the suite: put the Clock bean inside WebConfig, which depends on the rate limiter, which needs the Clock: a circular dependency that failed all 12 integration tests at startup. Moved to its own config class.
 Verified on the real stack (not just MockMvc): lockout -> 429 + Retry-After 900 even for the correct password; per-IP cutoff at request 11; a real poison message through Kafka -> dead_letter -> 422 on re-drive -> discard -> gauge 1 -> 0; officer gets 403 on ops endpoints.
 Not done on purpose: RS256 key split and OIDC (ADR-0002 describes both), a Prometheus registry and alert delivery (rules are documented, not run).
+
+## Fixing the code-review findings
+Proved the two surprising findings first in throwaway copies (dotless-i spelling of a locked email logged in with 200;
+a 300-char Kafka key stalled its partition with 0 dead letters). Each fix has a regression test.
+1. Demo seed (MANAGER / "password") moved out of default migrations to `db/demo-seed`, dev profile and tests only.
+   Test boots default config and asserts zero users. Old local DBs need `down -v`.
+2. Recorder wedge: key/topic TEXT, NUL sanitised, coordinates-only fallback. Challenged my first fix: catching
+   DataIntegrityViolationException missed Postgres's NUL error (22P05), which Spring maps to
+   DataAccessResourceFailureException, the same family as "database down". Overrode: classify by SQLState class.
+3. Lockout bypass: Java lower-case key vs Postgres upper() lookup. Rejected "throttle by user id" (reintroduces account
+   enumeration). Overrode: ASCII-only emails (API 400 + DB CHECK) and exact lower(email) lookup.
+4. Proxy: Tomcat RemoteIpValve with trusted proxies only, not hand-parsed headers. Real-HTTP tests, off by default.
+5. Compose ports bound to 127.0.0.1; LAN address verified refused.
+My mistakes: a script assertion counted a phrase I'd just put in a comment so the seed rewrite silently didn't happen;
+a regression test used an email with no "i". Both caught before commit.
+Left (medium): blanket IllegalArgumentException -> 400; UTC "future incident date" check.

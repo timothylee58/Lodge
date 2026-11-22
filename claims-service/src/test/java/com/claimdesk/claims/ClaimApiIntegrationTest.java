@@ -54,6 +54,7 @@ class ClaimApiIntegrationTest {
         r.add("spring.datasource.password", pg::getPassword);
         r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         r.add("claimdesk.outbox.poll-ms", () -> "200");
+        r.add("spring.flyway.locations", () -> "classpath:db/migration,classpath:db/demo-seed"); // demo users
         r.add("claimdesk.auth.rate-limit-per-minute", () -> "100"); // the suite logs in a lot from one address
         r.add("claimdesk.jwt.secret", () -> "integration-test-secret-0123456789-abcdefghij");
     }
@@ -404,5 +405,23 @@ class ClaimApiIntegrationTest {
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 assertThat(jdbc.queryForObject("select count(*) from outbox_event where id in (?, ?) and published_at is not null",
                         Integer.class, a, b)).isEqualTo(2));
+    }
+
+    /** Regression for a review finding: a dotless-i spelling logged in while the real address was locked. */
+    @Test
+    void alternativeUnicodeSpellingsCannotBypassTheLockout() throws Exception {
+        var email = "victim@demo.local"; // must contain an 'i' for the dotless variant to differ
+        addUser(email);
+        for (int i = 0; i < 5; i++) tryLogin(email, "wrong", "10.4.4.4");
+        assertThat(status(tryLogin(email, "password", "10.4.4.4"))).isEqualTo(429);
+
+        var variant = email.replace("i", "\u0131");
+        assertThat(variant).isNotEqualTo(email);
+        assertThat(status(tryLogin(variant, "password", "10.4.4.4")))
+                .as("dotless-i variant is rejected, not authenticated").isEqualTo(400);
+        assertThat(status(tryLogin("VICTIM@DEMO.LOCAL", "password", "10.4.4.4")))
+                .as("ASCII case variants share the same lock").isEqualTo(429);
+        assertThat(status(tryLogin("aina@demo.local", "x".repeat(129), "10.4.4.5"))).as("oversized password").isEqualTo(400);
+        assertThat(status(tryLogin("AINA@Demo.Local", "password", "10.4.4.5"))).as("case-insensitive login still works").isEqualTo(200);
     }
 }
