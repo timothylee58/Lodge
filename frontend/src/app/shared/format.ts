@@ -1,5 +1,11 @@
-import { HttpErrorResponse } from '@angular/common/http';
-import { ClaimStatus } from '../core/models';
+import type { ClaimStatus } from '../core/models';
+
+/** The parts of Angular's HttpErrorResponse we use. Structural, so this file has no runtime Angular dependency. */
+export interface HttpErrorLike { status: number; error: unknown; headers?: { get(name: string): string | null } }
+
+function isHttpError(e: unknown): e is HttpErrorLike {
+  return typeof e === 'object' && e !== null && typeof (e as HttpErrorLike).status === 'number';
+}
 
 export const STATUS_LABEL: Record<ClaimStatus, string> = {
   SUBMITTED: 'Submitted', UNDER_REVIEW: 'Under review', PENDING_INFO: 'Waiting for information',
@@ -25,10 +31,10 @@ export function when(iso: string | null | undefined): string {
 
 /** Human message from an RFC 7807 ProblemDetail (or anything else the server sent). */
 export function problem(err: unknown): string {
-  if (!(err instanceof HttpErrorResponse)) return 'Something went wrong.';
+  if (!isHttpError(err)) return 'Something went wrong.';
   if (err.status === 0) return 'Cannot reach the server. Check your connection and try again.';
   if (err.status === 429) {
-    const s = Number(err.headers.get('Retry-After'));
+    const s = Number(err.headers?.get('Retry-After'));
     return s ? `Too many attempts. Try again in ${Math.ceil(s / 60)} minute${s > 60 ? 's' : ''}.` : 'Too many attempts. Try again later.';
   }
   const body = err.error as { detail?: string; title?: string } | null;

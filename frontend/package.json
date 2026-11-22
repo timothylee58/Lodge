@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "ng serve --proxy-config proxy.conf.json",
-    "build": "ng build"
+    "build": "ng build",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@angular/common": "18.2.13",
@@ -27,6 +28,7 @@
     "typescript": "5.5.4",
     "tailwindcss": "3.4.17",
     "postcss": "8.4.49",
-    "autoprefixer": "10.4.20"
+    "autoprefixer": "10.4.20",
+    "@playwright/test": "1.48.2"
   }
 }

@@ -69,7 +69,13 @@ password `password`). For live reload against IDE-run services: `cd frontend && 
 
 ```bash
 (cd claims-service && ./mvnw test) && (cd reporting-service && ./mvnw test)
+scripts/e2e.sh        # full stack + Playwright in Docker (POSTGRES_PORT=55432 scripts/e2e.sh if 5432 is taken)
 ```
+
+End-to-end (`frontend/e2e`, Playwright): claimant submit, the full cross-role lifecycle incl. the coverage-limit
+error in the UI, the manager dashboard catching up via Kafka, the pick-up race (409), lockout messaging, route guards,
+no CSP violations; plus unit tests for the shared format helpers. The suite runs with `docker-compose.e2e.yml`, which
+raises only the per-IP login limit (all test traffic shares one IP behind nginx); the per-email lockout is tested as-is.
 
 Integration tests use Testcontainers (real Postgres + Kafka) and need Docker. With Docker 29+, Testcontainers
 >= 1.21.4 is required (pinned in the pom).

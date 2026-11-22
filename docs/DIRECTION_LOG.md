@@ -24,6 +24,7 @@ real-server runs, a self-review) before moving on. Section 2 separates the two.
 | D5 | For each open-items list, **chose fix vs describe**: fixed alerting, lockout, retention, compose; told the AI to *describe, not build* OIDC/JWKS. | Spent the time budget where the risk was; documented the rest as a decision. | `000d25e`, `docs/adr/0002-…` |
 | D6 | **Ran a code review on my own codebase** and made the AI fix all 5 high findings, then the 2 mediums. | Treated AI output as untrusted until reviewed. | `3f90e4a`, `8180562`, `b2f140d` |
 | D7 | Asked for Angular Material + Tailwind and this documentation. | Matches the brief's stack; forced a real integration problem to solve (below). | Block 5b in journal |
+| D8 | Asked for automated frontend tests instead of accepting "verified manually". | Closed the last listed gap; the suite was proven able to fail (mutation check). | `frontend/e2e`, `scripts/e2e.sh` |
 
 ## 2. AI mistakes that verification caught (and the override)
 
@@ -50,7 +51,7 @@ Each one would have shipped if I had accepted "it compiles / the tests pass".
 - Polling (10–15 s) with a visible "as of" line instead of SSE.
 - `npm install` instead of `npm ci` in the image (npm bug with this lockfile), noted in the Dockerfile.
 - Material roughly doubles the initial bundle (92 -> 164 kB transferred); accepted for the brief's stack.
-- No automated frontend tests yet (verified manually in a browser). Known gap.
+- E2E tests run against a stack with a raised per-IP login limit (one shared IP behind nginx); lockout tested as-is.
 
 ## 4. Challenges to run live in an interview
 
@@ -66,3 +67,4 @@ Start: `docker compose up --build` -> http://localhost:4200 (demo users in `READ
 | "Brute-force a login." | 6 wrong attempts -> 429 + `Retry-After`; try the dotless-ı spelling -> 400. |
 | "Why two services, not one or five?" | ADR-0001 + the REST-vs-Kafka rule. |
 | "Where did the AI get it wrong?" | Section 2 of this file, each with a commit. |
+| "How do you know your UI tests test anything?" | Break the 409 message in `workbench.component.ts`, run `scripts/e2e.sh`: exactly the race test fails. |

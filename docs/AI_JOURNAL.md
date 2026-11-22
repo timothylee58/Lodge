@@ -118,3 +118,15 @@ Found in the browser (twice):
 Cost recorded: initial bundle 92 kB -> 164 kB transferred (334 kB -> 792 kB raw), almost all Material + theme CSS.
 Budget raised to 800 kB warning on purpose; lazy routes keep screen code out of the initial load.
 Verified: claimant / officer / manager flows in the browser, 0 inline handlers, 0 CSP violations, 0 font requests.
+
+## Frontend tests (directed by me: "add tests" instead of "verified manually")
+Accepted: Playwright end-to-end against the real compose stack (UI, both services, Postgres, Kafka), serial, each test
+creates its own claims through the API; unit tests for the shared format helpers in the same runner.
+Challenged: behind nginx every test request comes from one client IP, so the real 10/min login limit would make the
+suite flaky. Rejected "log in once and reuse tokens" (hides the login UI from tests). Overrode: a `docker-compose.e2e.yml`
+overlay raising ONLY the per-IP limit; the per-email lockout stays real and has its own test.
+Found while running: Playwright compiles specs to CommonJS and Angular packages are ESM-only, so importing
+HttpErrorResponse into a unit test failed. Overrode: `problem()` now depends on the structural shape of an HTTP error
+(type-only import), which also makes the helper framework-free.
+Verification of the tests themselves: 10/10 passed first time, so I broke the workbench's 409 handling on purpose; exactly
+the race test failed (1 failed, 9 passed), then the file was restored unchanged.

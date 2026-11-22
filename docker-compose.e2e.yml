@@ -1,0 +1,7 @@
+# Overlay for the end-to-end suite only:  docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+# Behind nginx every test request arrives from ONE client IP, so the real 10/min login limit would make the suite
+# flaky. Only that per-IP limit is raised; the per-email lockout is unchanged and has its own test.
+services:
+  claims-service:
+    environment:
+      CLAIMDESK_AUTH_RATELIMITPERMINUTE: "1000"

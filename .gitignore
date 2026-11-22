@@ -9,3 +9,5 @@ dist/
 
 # Working brief, not part of the deliverable
 Lodge PRD*.md
+test-results/
+playwright-report/
