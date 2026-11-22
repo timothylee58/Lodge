@@ -84,3 +84,18 @@ Left (medium): blanket IllegalArgumentException -> 400; UTC "future incident dat
 2. "Future incident date" was judged on the server's UTC clock, so a claim reported at 04:00 in KL for an incident that
    day was rejected. Market now carries its time zone and the check uses the policy market's "today" (injected Clock).
    Removed @PastOrPresent from the DTO, since it used the same server clock.
+
+## Block 5 — Angular frontend
+Accepted: standalone components + signals, plain CSS with light/dark tokens instead of Material (smaller, no theming
+fight), nginx as the single origin, polling with a visible "as of" line on the dashboard.
+Challenged: first polling version used timer+switchMap with no inner catchError, so one failed request would have
+silently ended the claimant's auto-refresh forever. Overrode: catch per request, keep polling.
+Found in the browser (not by the build): the production page rendered unstyled. Angular's critical-CSS inlining loads
+the stylesheet with `onload="this.media='all'"`, an inline handler my CSP (`script-src 'self'`) blocks. Fixed by
+disabling inlineCritical rather than weakening the CSP; verified no inline handlers remain.
+Wiring: claims-service trusts X-Forwarded-For only from the frontend's fixed IP (172.28.0.10), so the login rate limit
+sees real clients through nginx while direct :8080 calls can't spoof the header.
+Tooling: `npm ci` rejected a lockfile that npm had just generated in the same image (npm 10 bug with this tree);
+the image uses `npm install` against the committed lockfile. Trade-off noted in the Dockerfile.
+Verified end to end in a browser: claimant submits -> officer picks up and approves 8,000 MYR -> manager dashboard
+shows the exposure and workload via Kafka. No automated frontend tests yet (gap).

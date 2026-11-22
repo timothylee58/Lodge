@@ -8,7 +8,7 @@ Backend-first; see `docs/adr/0001-modular-monolith-plus-reporting.md` and `docs/
 **Everything in containers (one command):**
 
 ```bash
-docker compose up --build                 # Postgres, Kafka, claims-service :8080, reporting-service :8081
+docker compose up --build                 # UI http://localhost:4200 + Postgres, Kafka, claims :8080, reporting :8081
 # if port 5432 is taken on your machine:  POSTGRES_PORT=55432 docker compose up --build
 ```
 
@@ -51,6 +51,17 @@ from before this change, reset it once with `docker compose down -v` (the old `V
 and `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=<regex of your proxy IPs>`, and have the proxy append the client address
 (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Otherwise every user shares one login rate-limit
 bucket. Leave it off without a proxy: `X-Forwarded-For` is client-controlled.
+
+## Frontend (Angular 18)
+
+Served by nginx at http://localhost:4200, which also proxies `/api/**` to the two services (one origin, no CORS).
+Sign in with a demo account: claimant `aina@`, officers `wei@` / `priya@`, manager `mark@` (all `@demo.local`,
+password `password`). For live reload against IDE-run services: `cd frontend && npm install && npm start`
+(port 4200, proxies via `proxy.conf.json`).
+
+- Claimant: report an incident, follow progress and timeline, answer information requests (polls every 10s).
+- Officer: queue (unassigned / mine / all, oldest first), pick up, workbench actions per state.
+- Manager: exposure per currency and market, workload, claims by status, with an "as of" freshness line (polls 15s).
 
 ## Tests
 

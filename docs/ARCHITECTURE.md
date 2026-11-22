@@ -7,6 +7,14 @@ claims-service (write side, system of record)          reporting-service (read s
   claim + claim_event + outbox_event  --one tx-->  outbox poller --> Kafka topic claims.events (key = claimId)
 ```
 
+## Frontend
+Angular 18 standalone components and signals, served by nginx, which proxies `/api/reports` and dead-letter ops to
+reporting-service and the rest of `/api` to claims-service. nginx sets a strict CSP (no inline scripts), so Angular's
+critical-CSS inlining is turned off (it relies on an inline `onload` handler). The frontend container has a fixed IP
+and is claims-service's only trusted proxy for `X-Forwarded-For`. Route guards are UX only; every rule is enforced
+server-side. Tokens live in sessionStorage (XSS-exposed; mitigated by CSP and template escaping; OIDC is the
+production path, ADR-0002). Async updates use polling (10–15s); SSE is the next step.
+
 ## REST vs Kafka rule
 - **REST**: anything a user waits on and needs an immediate yes/no for: submit, every state transition, queries.
   Validation errors and the new state must come back in the same response.
