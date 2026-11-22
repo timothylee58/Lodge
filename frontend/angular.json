@@ -6,16 +6,16 @@
     "analytics": false
   },
   "projects": {
-    "claimdesk": {
+    "lodge": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
-      "prefix": "cd",
+      "prefix": "lg",
       "architect": {
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/claimdesk",
+            "outputPath": "dist/lodge",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [
@@ -57,7 +57,7 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "development": {
-              "buildTarget": "claimdesk:build:development"
+              "buildTarget": "lodge:build:development"
             }
           },
           "defaultConfiguration": "development"

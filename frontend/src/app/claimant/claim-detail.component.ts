@@ -18,7 +18,7 @@ const STEPS: { status: ClaimStatus[]; label: string }[] = [
 ];
 
 @Component({
-  selector: 'cd-claim-detail',
+  selector: 'lg-claim-detail',
   standalone: true,
   imports: [FormsModule, RouterLink, StatusBadgeComponent, TimelineComponent, ...MATERIAL],
   template: `
@@ -26,7 +26,7 @@ const STEPS: { status: ClaimStatus[]; label: string }[] = [
     @if (detail(); as d) {
       <div class="flex flex-wrap items-center justify-between gap-4">
         <h1 class="text-2xl">{{ d.claim.claimNumber }}</h1>
-        <cd-status [status]="d.claim.status" />
+        <lg-status [status]="d.claim.status" />
       </div>
       <ol class="m-0 flex list-none flex-wrap gap-2 p-0" aria-label="Progress">
         @for (s of steps; track s.label; let i = $index) {
@@ -69,7 +69,7 @@ const STEPS: { status: ClaimStatus[]; label: string }[] = [
         </mat-card>
         <mat-card appearance="outlined" class="p-4">
           <h2 class="mb-3 text-lg">Timeline</h2>
-          <cd-timeline [entries]="d.timeline" [currency]="d.claim.currency" />
+          <lg-timeline [entries]="d.timeline" [currency]="d.claim.currency" />
           <p class="m-0 text-sm text-slate-500">Updates automatically.</p>
         </mat-card>
       </div>

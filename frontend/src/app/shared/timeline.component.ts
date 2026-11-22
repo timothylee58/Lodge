@@ -3,7 +3,7 @@ import { TimelineEntry } from '../core/models';
 import { EVENT_LABEL, money, when } from './format';
 
 @Component({
-  selector: 'cd-timeline',
+  selector: 'lg-timeline',
   standalone: true,
   template: `
     <ol class="m-0 list-none border-l-2 border-slate-200 p-0 dark:border-slate-700">

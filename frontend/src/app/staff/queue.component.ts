@@ -11,7 +11,7 @@ import { MATERIAL } from '../shared/material';
 type Tab = 'unassigned' | 'me' | 'all';
 
 @Component({
-  selector: 'cd-queue',
+  selector: 'lg-queue',
   standalone: true,
   imports: [FormsModule, RouterLink, StatusBadgeComponent, ...MATERIAL],
   template: `
@@ -41,7 +41,7 @@ type Tab = 'unassigned' | 'me' | 'all';
           <ng-container matColumnDef="market"><th mat-header-cell *matHeaderCellDef>Market</th><td mat-cell *matCellDef="let c">{{ c.market }}</td></ng-container>
           <ng-container matColumnDef="type"><th mat-header-cell *matHeaderCellDef>Type</th><td mat-cell *matCellDef="let c">{{ c.type }}</td></ng-container>
           <ng-container matColumnDef="incident"><th mat-header-cell *matHeaderCellDef>Incident</th><td mat-cell *matCellDef="let c">{{ c.incidentDate }}</td></ng-container>
-          <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th><td mat-cell *matCellDef="let c"><cd-status [status]="c.status" /></td></ng-container>
+          <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th><td mat-cell *matCellDef="let c"><lg-status [status]="c.status" /></td></ng-container>
           <ng-container matColumnDef="officer"><th mat-header-cell *matHeaderCellDef>Officer</th><td mat-cell *matCellDef="let c">{{ c.assigneeName ?? '—' }}</td></ng-container>
           <ng-container matColumnDef="reserve"><th mat-header-cell *matHeaderCellDef class="!text-right">Reserve</th>
             <td mat-cell *matCellDef="let c" class="!text-right tabular-nums">{{ money(c.reserveAmount, c.currency) }}</td></ng-container>

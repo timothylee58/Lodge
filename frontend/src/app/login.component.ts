@@ -6,7 +6,7 @@ import { problem } from './shared/format';
 import { MATERIAL } from './shared/material';
 
 @Component({
-  selector: 'cd-login',
+  selector: 'lg-login',
   standalone: true,
   imports: [FormsModule, ...MATERIAL],
   template: `

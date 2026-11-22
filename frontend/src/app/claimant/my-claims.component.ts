@@ -8,7 +8,7 @@ import { money, problem, when } from '../shared/format';
 import { MATERIAL } from '../shared/material';
 
 @Component({
-  selector: 'cd-my-claims',
+  selector: 'lg-my-claims',
   standalone: true,
   imports: [RouterLink, StatusBadgeComponent, TitleCasePipe, ...MATERIAL],
   template: `
@@ -32,7 +32,7 @@ import { MATERIAL } from '../shared/material';
                 <div><strong>{{ c.claimNumber }}</strong> <span class="text-slate-500">· {{ c.type | titlecase }} · incident {{ c.incidentDate }}</span></div>
                 <p class="my-1 truncate text-slate-500">{{ c.description }}</p>
                 <div class="flex flex-wrap items-center gap-4 text-sm">
-                  <cd-status [status]="c.status" />
+                  <lg-status [status]="c.status" />
                   @if (c.settledAmount != null) { <span>Paid {{ money(c.settledAmount, c.currency) }}</span> }
                   <span class="text-slate-500">Updated {{ when(c.updatedAt) }}</span>
                 </div>

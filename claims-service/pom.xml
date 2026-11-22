@@ -8,7 +8,7 @@
     <version>3.3.5</version>
     <relativePath/>
   </parent>
-  <groupId>com.claimdesk</groupId>
+  <groupId>com.lodge</groupId>
   <artifactId>claims-service</artifactId>
   <version>0.1.0</version>
   <properties>

@@ -12,7 +12,7 @@ const TONE: Record<ClaimStatus, string> = {
 };
 
 @Component({
-  selector: 'cd-status',
+  selector: 'lg-status',
   standalone: true,
   template: `<span class="inline-block whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold" [class]="tone()">{{ label() }}</span>`,
 })

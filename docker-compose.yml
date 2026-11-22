@@ -7,20 +7,20 @@
 # LOCAL USE ONLY.
 x-service-env: &service-env
   SPRING_PROFILES_ACTIVE: dev
-  SPRING_DATASOURCE_PASSWORD: claimdesk
+  SPRING_DATASOURCE_PASSWORD: lodge
   SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: claimdesk
-      POSTGRES_USER: claimdesk
-      POSTGRES_PASSWORD: claimdesk
+      POSTGRES_DB: lodge
+      POSTGRES_USER: lodge
+      POSTGRES_PASSWORD: lodge
     ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]   # set POSTGRES_PORT if 5432 is taken on your machine
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U claimdesk"]
+      test: ["CMD-SHELL", "pg_isready -U lodge"]
       interval: 5s
       retries: 10
 
@@ -53,7 +53,7 @@ services:
     restart: on-failure
     environment:
       <<: *service-env
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/claimdesk
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lodge
       # Trust X-Forwarded-For ONLY from the frontend container, so the login rate limit sees real client IPs.
       # Direct calls to :8080 arrive from the network gateway (.1), which is not trusted.
       SERVER_FORWARD_HEADERS_STRATEGY: native
@@ -68,7 +68,7 @@ services:
     restart: on-failure
     environment:
       <<: *service-env
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/claimdesk?currentSchema=reporting
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lodge?currentSchema=reporting
 
   frontend:
     build: ./frontend

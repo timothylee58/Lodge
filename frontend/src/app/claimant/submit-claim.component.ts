@@ -7,7 +7,7 @@ import { money, problem, todayIso } from '../shared/format';
 import { MATERIAL } from '../shared/material';
 
 @Component({
-  selector: 'cd-submit-claim',
+  selector: 'lg-submit-claim',
   standalone: true,
   imports: [FormsModule, RouterLink, ...MATERIAL],
   template: `

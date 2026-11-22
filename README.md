@@ -1,104 +1,128 @@
-# ClaimDesk
+# Lodge
 
-Claims intake and handling: claimants report incidents and track them, officers work a queue, managers see exposure.
-Backend-first; see `docs/adr/0001-modular-monolith-plus-reporting.md` and `docs/AI_JOURNAL.md`.
-How the AI was directed, challenged and overridden (with evidence): `docs/DIRECTION_LOG.md`.
+**Lodge** is a claims intake and handling MVP. Claimants *lodge* an incident and follow it to settlement, claims
+officers work a shared queue, and managers see live liability exposure and workload.
+
+It is built backend-first as a take-home exercise: two Spring Boot services (a write-side system of record and an
+event-driven reporting service), Kafka with a transactional outbox, and an Angular Material + Tailwind frontend.
+
+> **No public hosting.** This repository is source only. The app runs on your machine with Docker Compose, and every
+> port is bound to `127.0.0.1`.
+
+## Quick start
+
+```bash
+docker compose up --build
+# if port 5432 is already taken on your machine:
+POSTGRES_PORT=55432 docker compose up --build
+```
+
+Open **http://localhost:4200** and sign in with a demo account (password `password` for all):
+
+| Role | Email | What to try |
+|---|---|---|
+| Claimant | `aina@demo.local` | Report an incident, answer an information request, see the payout |
+| Claims officer (MY) | `wei@demo.local` | Pick up a claim, request info, approve with a reserve, settle |
+| Claims officer (SG) | `priya@demo.local` | Race Wei for the same claim (one gets a friendly 409) |
+| Manager | `mark@demo.local` | Exposure by currency and market, officer workload, "data as of" freshness |
+
+Demo accounts exist only in the `dev` profile and the tests; a default start creates no accounts at all.
 
 ## Deliverables
 
 | # | Deliverable | Where |
 |---|---|---|
-| 1 | Git history showing the development process | `git log` — block-by-block commits, then review-driven `fix:` commits |
-| 2 | Working application, started locally | `docker compose up --build` -> http://localhost:4200 (below) |
-| 3 | AI working journal (asked / accepted / challenged / overrode) | `docs/AI_JOURNAL.md`; curated view with evidence: `docs/DIRECTION_LOG.md` |
-| 4 | Supporting documentation | `docs/ARCHITECTURE.md`, `docs/adr/`, `docs/RUNBOOK.md`, `docs/PANEL_QA.md` |
+| 1 | Git history showing the development process | `git log`: block-by-block feature commits, then review-driven `fix:` commits |
+| 2 | Working application, started locally | `docker compose up --build` (above) |
+| 3 | AI working journal: asked / accepted / challenged / overrode | [`docs/AI_JOURNAL.md`](docs/AI_JOURNAL.md); curated, evidence-linked view: [`docs/DIRECTION_LOG.md`](docs/DIRECTION_LOG.md) |
+| 4 | Supporting documentation | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr), [`docs/RUNBOOK.md`](docs/RUNBOOK.md), [`docs/PANEL_QA.md`](docs/PANEL_QA.md) |
 
-**No public hosting.** This repository is source only. The app runs on your machine via Docker Compose, with every
-port bound to `127.0.0.1`.
+**Panel questions** (why two services, Kafka down, concurrent assign, API contract, exposure staleness, rejected AI
+code) are answered with code and test references in [`docs/PANEL_QA.md`](docs/PANEL_QA.md).
 
-**Panel questions** (two services, Kafka down, concurrent assign, API contract, exposure staleness, rejected AI code):
-answered with code and test references in `docs/PANEL_QA.md`.
+## Architecture
 
-## Run locally
-
-**Everything in containers (one command):**
-
-```bash
-docker compose up --build                 # UI http://localhost:4200 + Postgres, Kafka, claims :8080, reporting :8081
-# if port 5432 is taken on your machine:  POSTGRES_PORT=55432 docker compose up --build
+```
+Angular (Material + Tailwind) ── nginx :4200 ──┬── /api/**         ──▶ claims-service :8080 (REST, JWT, state machine)
+                                               │                       Postgres (claims, timeline, outbox)
+                                               │                       outbox poller ──▶ Kafka topic claims.events
+                                               │                                              │
+                                               └── /api/reports/** ──▶ reporting-service :8081 ◀┘ (consumer, projections)
 ```
 
-**From your IDE** (fast iteration): start only the infra, then run each service with the `dev` profile:
+- **REST** for anything a user waits on (submit, every state transition, queries). **Kafka** for side effects that must
+  not block the user (reporting today; notifications or fraud checks later).
+- **Transactional outbox:** the claim change, its timeline row and its event commit in one transaction. If Kafka is down
+  the approval still succeeds and the event is published later.
+- **Idempotent, order-tolerant consumer:** duplicate events are ignored and an older claim version never overwrites a
+  newer one, so the read model can be rebuilt by replaying the topic.
+- **Claim lifecycle:** `SUBMITTED → UNDER_REVIEW ⇄ PENDING_INFO → APPROVED → SETTLED`, or `UNDER_REVIEW → REJECTED`.
+  Invalid transitions and concurrent edits return RFC 7807 `409`.
+- **Exposure** = sum of reserves on claims that are not settled or rejected, per market, type and currency (never
+  summed across currencies). Reports carry an `asOf` timestamp because they lag the write side by a second or two.
 
-```bash
-docker compose up -d postgres kafka
-cd claims-service
-SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run   # or run from your IDE with that env var
-open http://localhost:8080/swagger-ui.html
+Details and trade-offs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+[ADR-0001](docs/adr/0001-modular-monolith-plus-reporting.md) (two services, not one or five),
+[ADR-0002](docs/adr/0002-token-signing-and-oidc-path.md) (JWT today, OIDC path).
+
+## Repository layout
+
 ```
-
-In a second terminal, the read side (Kafka consumer + reports on port 8081):
-
-```bash
-cd reporting-service
-SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+claims-service/      Spring Boot 3, Java 21: domain + state machine, REST API, JWT, outbox, Flyway
+reporting-service/   Spring Boot 3, Java 21: Kafka consumer, projections, reports, dead-letter ops
+frontend/            Angular 18 + Material + Tailwind, nginx image, Playwright e2e suite
+docs/                architecture, ADRs, runbook, panel Q&A, AI journal, direction log
+scripts/e2e.sh       full-stack end-to-end run
+docker-compose.yml   Postgres, Kafka, both services, frontend (all bound to 127.0.0.1)
 ```
-
-Reports (manager token from `mark@demo.local`): `GET :8081/api/reports/exposure`, `/workload`, `/claims-by-status`.
-Each response has `asOf` (freshness of the data) and `generatedAt`. reporting-service keeps its tables in the
-`reporting` schema of the same Postgres and never reads claims tables.
-
-`JWT_SECRET` (>= 32 bytes, identical for both services) is **required**; the app refuses to start without it. The `dev` profile supplies a
-throwaway local value (`application-dev.yml`). Anywhere else, set `JWT_SECRET` in the environment.
-
-Demo users (password `password`): `aina@demo.local` (claimant), `wei@demo.local` / `priya@demo.local` (officers),
-`mark@demo.local` (manager). `POST /api/auth/login` returns a bearer token.
-
-Kafka has two listeners (`kafka:19092` for containers, `localhost:9092` for your machine). Postgres defaults to host
-port 5432; set `POSTGRES_PORT` to move it (then use that port in `spring.datasource.url` for IDE runs).
-The compose services run the `dev` profile (public throwaway JWT secret + demo users), so every port is bound to
-`127.0.0.1` only — nothing is reachable from your network.
-
-**Demo data is dev-only.** Demo users and policies live in `db/demo-seed` and load only when that Flyway location is
-enabled (the `dev` profile and the tests). A default (non-dev) start creates no accounts at all. If you have a database
-from before this change, reset it once with `docker compose down -v` (the old `V2__seed` migration no longer exists).
-
-**Behind a reverse proxy** (e.g. the frontend's nginx), set on claims-service `SERVER_FORWARD_HEADERS_STRATEGY=native`
-and `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=<regex of your proxy IPs>`, and have the proxy append the client address
-(`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Otherwise every user shares one login rate-limit
-bucket. Leave it off without a proxy: `X-Forwarded-For` is client-controlled.
-
-## Frontend (Angular 18 + Angular Material + Tailwind)
-
-Material for components, Tailwind for layout (preflight off; see journal block 5b). Served by nginx at
-http://localhost:4200, which also proxies `/api/**` to the two services (one origin, no CORS).
-Sign in with a demo account: claimant `aina@`, officers `wei@` / `priya@`, manager `mark@` (all `@demo.local`,
-password `password`). For live reload against IDE-run services: `cd frontend && npm install && npm start`
-(port 4200, proxies via `proxy.conf.json`).
-
-- Claimant: report an incident, follow progress and timeline, answer information requests (polls every 10s).
-- Officer: queue (unassigned / mine / all, oldest first), pick up, workbench actions per state.
-- Manager: exposure per currency and market, workload, claims by status, with an "as of" freshness line (polls 15s).
 
 ## Tests
 
 ```bash
-(cd claims-service && ./mvnw test) && (cd reporting-service && ./mvnw test)
-scripts/e2e.sh        # full stack + Playwright in Docker (POSTGRES_PORT=55432 scripts/e2e.sh if 5432 is taken)
+(cd claims-service && ./mvnw test)      # unit + Testcontainers integration (needs Docker)
+(cd reporting-service && ./mvnw test)
+scripts/e2e.sh                          # whole stack + Playwright in Docker (POSTGRES_PORT=55432 if 5432 is taken)
 ```
 
-End-to-end (`frontend/e2e`, Playwright): claimant submit, the full cross-role lifecycle incl. the coverage-limit
-error in the UI, the manager dashboard catching up via Kafka, the pick-up race (409), lockout messaging, route guards,
-no CSP violations; plus unit tests for the shared format helpers. The suite runs with `docker-compose.e2e.yml`, which
-raises only the per-IP login limit (all test traffic shares one IP behind nginx); the per-email lockout is tested as-is.
+- **Backend:** state machine and domain rules, the full lifecycle over HTTP, concurrent assign (exactly one wins),
+  ownership and role checks (incl. on a real server), outbox atomicity under a forced failure, idempotent and
+  out-of-order event handling, poison messages, login lockout and rate limiting.
+- **End-to-end** (`frontend/e2e`): claimant submit, the cross-role lifecycle, the dashboard catching up via Kafka, the
+  pick-up race, lockout messaging, route guards, and no CSP violations. It runs with `docker-compose.e2e.yml`, which
+  raises only the per-IP login limit (all test traffic shares one IP behind nginx).
+- With Docker 29+, Testcontainers 1.21.4 or newer is required (pinned in the poms).
 
-Integration tests use Testcontainers (real Postgres + Kafka) and need Docker. With Docker 29+, Testcontainers
->= 1.21.4 is required (pinned in the pom).
+## Developing locally
 
-## Operations notes
+Run the infrastructure in Docker and the services from your IDE with the `dev` profile:
 
-- Dead letters (re-drive/discard API + metrics), alert rules, unlocking users, read-model rebuild: `docs/RUNBOOK.md`.
-- Login: 10 requests/min per IP and a 15-minute lockout after 5 consecutive failures per email (429 + `Retry-After`).
-  Token signing and the OIDC path: `docs/adr/0002-token-signing-and-oidc-path.md`.
-- Broker outages are retriable: the publisher waits and retries without counting attempts.
-- Poison messages on the consumer side land in `claims.events.DLT`. See `docs/ARCHITECTURE.md` for guarantees and gaps.
+```bash
+docker compose up -d postgres kafka
+(cd claims-service    && SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run)   # :8080, Swagger at /swagger-ui.html
+(cd reporting-service && SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run)   # :8081
+(cd frontend && npm install && npm start)                                     # :4200, proxies to both services
+```
+
+- `JWT_SECRET` (32+ bytes, the same for both services) is required outside the `dev` profile; the services refuse to
+  start without it.
+- Kafka listens on `kafka:19092` for containers and `localhost:9092` for your machine.
+- If you ran an older version of this repo, reset local data once: `docker compose down -v` (the database is now
+  named `lodge`, and the demo seed moved out of the default migrations).
+- Behind a reverse proxy, set `SERVER_FORWARD_HEADERS_STRATEGY=native` and
+  `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=<your proxy IPs>` on claims-service so the login rate limit sees real
+  client IPs. Compose already does this for the bundled nginx.
+
+## Operations
+
+- Login: 10 requests a minute per client IP, and a 15-minute lockout after 5 consecutive failures per email
+  (`429` with `Retry-After`).
+- Events that could not be published, and messages the consumer could not process, are dead-lettered rather than
+  blocking anything. Both are exposed as metrics and can be listed, re-driven or discarded through manager-only ops
+  endpoints. See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for alert rules, unlocking users and rebuilding the read model.
+
+## Known gaps (deliberate)
+
+- No FX conversion: exposure is reported per currency.
+- HS256 shared-secret JWT for the demo; OIDC with JWKS is the documented production path (ADR-0002).
+- Angular types are hand-written to mirror the backend DTOs, not yet generated from the OpenAPI spec.
+- Updates use polling (10–15 s) rather than server-sent events.

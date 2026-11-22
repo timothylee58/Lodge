@@ -1,4 +1,4 @@
-# How I directed, challenged and overrode the AI — ClaimDesk build
+# How I directed, challenged and overrode the AI — Lodge build
 
 Audience: Talent Acquisition / interview panel. Companion to `docs/AI_JOURNAL.md` (the raw, entry-by-entry log).
 Every claim below points to a commit, a test or a file in this repo so it can be checked.
@@ -61,7 +61,7 @@ Start: `docker compose up --build` -> http://localhost:4200 (demo users in `READ
 |---|---|
 | "Show a line of AI code you rejected." | `AuthService` dummy-hash fix and the `authGates` test (D-table row 1). |
 | "Two officers click Pick up at once." | `concurrentAssignExactlyOneWins` (one 200, one 409); in the UI the loser sees "picked up by someone else". |
-| "Kafka is down when a claim is approved." | `docker compose stop kafka`, approve in the UI, `/actuator/metrics/claimdesk.outbox.oldest.pending.seconds` grows; start Kafka, the dashboard catches up. |
+| "Kafka is down when a claim is approved." | `docker compose stop kafka`, approve in the UI, `/actuator/metrics/lodge.outbox.oldest.pending.seconds` grows; start Kafka, the dashboard catches up. |
 | "Someone sends garbage to the topic." | Produce a bad message (`docs/RUNBOOK.md` §2), list it in `/api/ops/dead-letters`, re-drive -> 422, discard. |
 | "How stale can the dashboard be?" | The "Data as of" line; ARCHITECTURE "Consistency and staleness". |
 | "Brute-force a login." | 6 wrong attempts -> 429 + `Retry-After`; try the dotless-ı spelling -> 400. |

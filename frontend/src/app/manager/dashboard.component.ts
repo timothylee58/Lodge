@@ -9,7 +9,7 @@ import { MATERIAL } from '../shared/material';
 const ORDER: ClaimStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_INFO', 'APPROVED', 'SETTLED', 'REJECTED'];
 
 @Component({
-  selector: 'cd-dashboard',
+  selector: 'lg-dashboard',
   standalone: true,
   imports: [...MATERIAL],
   template: `

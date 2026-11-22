@@ -6,9 +6,9 @@
 spring:
   application.name: claims-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/claimdesk
-    username: claimdesk
-    password: claimdesk
+    url: jdbc:postgresql://localhost:5432/lodge
+    username: lodge
+    password: lodge
   jpa:
     hibernate.ddl-auto: validate   # Flyway owns the schema
     open-in-view: false
@@ -20,7 +20,7 @@ spring:
       acks: all
       properties.enable.idempotence: true
 
-claimdesk:
+lodge:
   outbox:
     topic: claims.events
     poll-ms: 1000

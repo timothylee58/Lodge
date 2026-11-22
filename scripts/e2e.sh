@@ -3,7 +3,7 @@
 # Usage: scripts/e2e.sh            (POSTGRES_PORT=55432 scripts/e2e.sh if 5432 is taken)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-compose() { docker compose -p claimdesk-e2e -f docker-compose.yml -f docker-compose.e2e.yml "$@"; }
+compose() { docker compose -p lodge-e2e -f docker-compose.yml -f docker-compose.e2e.yml "$@"; }
 trap 'compose down -v >/dev/null 2>&1 || true' EXIT
 compose up -d --build
 for _ in $(seq 1 60); do

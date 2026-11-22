@@ -4,4 +4,4 @@
 services:
   claims-service:
     environment:
-      CLAIMDESK_AUTH_RATELIMITPERMINUTE: "1000"
+      LODGE_AUTH_RATELIMITPERMINUTE: "1000"

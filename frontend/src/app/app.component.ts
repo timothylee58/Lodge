@@ -5,12 +5,12 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from './core/auth.service';
 
 @Component({
-  selector: 'cd-root',
+  selector: 'lg-root',
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, MatToolbarModule, MatButtonModule],
   template: `
     <mat-toolbar class="flex flex-wrap gap-2 !h-auto min-h-14 border-b border-slate-200 dark:border-slate-800">
-      <a class="mr-4 font-bold text-inherit no-underline" [routerLink]="home()">ClaimDesk</a>
+      <a class="mr-4 font-bold text-inherit no-underline" [routerLink]="home()">Lodge</a>
       @if (auth.session(); as s) {
         <nav aria-label="Main" class="flex flex-1 gap-1">
           @switch (s.role) {

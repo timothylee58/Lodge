@@ -1,4 +1,4 @@
-# ClaimDesk architecture
+# Lodge architecture
 
 ```
 claims-service (write side, system of record)          reporting-service (read side, may lag)
@@ -49,7 +49,7 @@ See `docs/RUNBOOK.md` section 3 (verified): truncate projections, reset the cons
 Possible because the projection depends only on the events.
 
 ## Operability
-Dead outbox rows and consumer dead letters are metrics (`claimdesk.outbox.dead`, `reporting.dead_letters.unresolved`,
+Dead outbox rows and consumer dead letters are metrics (`lodge.outbox.dead`, `reporting.dead_letters.unresolved`,
 plus outbox lag) and have MANAGER-only list / re-drive / discard endpoints. Procedures and alert rules: `docs/RUNBOOK.md`.
 
 ## Security

@@ -130,3 +130,15 @@ HttpErrorResponse into a unit test failed. Overrode: `problem()` now depends on 
 (type-only import), which also makes the helper framework-free.
 Verification of the tests themselves: 10/10 passed first time, so I broke the workbench's 409 handling on purpose; exactly
 the race test failed (1 failed, 9 passed), then the file was restored unchanged.
+
+## Rename ClaimDesk -> Lodge (directed by me)
+Asked: rename the product to Lodge across the whole repo, README first.
+Scope: Java packages (`com.claimdesk` -> `com.lodge`), config prefix (`claimdesk.*` -> `lodge.*`), metric names
+(`claimdesk.outbox.*` -> `lodge.outbox.*`, alert rules updated), database name/user, env vars, the Angular project and
+its selector prefix (`cd-` -> `lg-`), scripts and every doc. Earlier journal entries were renamed too, so names in this
+log match the code.
+Found while reviewing the README for the rename: it still said consumer poison messages go to `claims.events.DLT`, which
+stopped being true when dead letters moved to a table. Rewrote the README as a front page (quick start, roles table,
+deliverables, architecture, tests, known gaps).
+Verified after the rename: claims 30/30, reporting 15/15, end-to-end 10/10. Existing local volumes need
+`docker compose down -v` (the database name changed).

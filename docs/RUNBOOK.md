@@ -2,7 +2,7 @@
 
 Commands assume the compose stack (`docker compose up`). Every command below was run against the real stack
 unless marked otherwise. Kafka tools: `docker compose exec -T kafka /opt/kafka/bin/<tool> --bootstrap-server localhost:9092 ...`.
-Postgres: `docker compose exec -T postgres psql -U claimdesk`.
+Postgres: `docker compose exec -T postgres psql -U lodge`.
 
 ## 0. Getting a manager token
 ```bash
@@ -13,7 +13,7 @@ Ops endpoints and `/actuator/metrics/*` are MANAGER-only on both services (healt
 were run against the real stack, and the same behaviour is covered by integration tests.
 
 ## 1. Dead-lettered outbox rows (claims-service could not publish to Kafka)
-Symptom: metric `claimdesk.outbox.dead` > 0, or log line `Outbox event ... dead-lettered`.
+Symptom: metric `lodge.outbox.dead` > 0, or log line `Outbox event ... dead-lettered`.
 ```bash
 curl -s localhost:8080/api/ops/outbox/dead -H "Authorization: Bearer $TOKEN"        # id, eventType, attempts, lastError
 ```
@@ -51,7 +51,7 @@ Stop reporting, truncate, rewind, start. Works while the topic still holds the h
 raise it if the read model must be rebuildable further back).
 ```bash
 docker compose stop reporting-service
-docker compose exec -T postgres psql -U claimdesk -c "TRUNCATE reporting.claim_projection, reporting.processed_event, reporting.known_officer"
+docker compose exec -T postgres psql -U lodge -c "TRUNCATE reporting.claim_projection, reporting.processed_event, reporting.known_officer"
 kafka-consumer-groups.sh --group reporting-service --topic claims.events --reset-offsets --to-earliest --execute
 docker compose start reporting-service
 ```
@@ -72,20 +72,20 @@ Signals (Micrometer, visible at `/actuator/metrics/<name>`; with a Prometheus re
 
 | Metric | Meaning | Suggested alert |
 | --- | --- | --- |
-| `claimdesk.outbox.dead` | outbox rows needing an operator | `> 0` for 1m -> page/ticket |
-| `claimdesk.outbox.oldest.pending.seconds` | age of oldest unpublished row | `> 120` for 2m -> publishing stuck (broker down?) |
-| `claimdesk.outbox.pending` | publish backlog | rising trend |
+| `lodge.outbox.dead` | outbox rows needing an operator | `> 0` for 1m -> page/ticket |
+| `lodge.outbox.oldest.pending.seconds` | age of oldest unpublished row | `> 120` for 2m -> publishing stuck (broker down?) |
+| `lodge.outbox.pending` | publish backlog | rising trend |
 | `reporting.dead_letters.unresolved` | consumer dead letters | `> 0` for 1m -> ticket |
 | `reporting.dead_letters.recorded` | new dead letters since start | `increase(...[5m]) > 0` |
 
 Example rules (**not run in this repo**: add `micrometer-registry-prometheus`, expose `/actuator/prometheus` on a
 management port, and load these into Prometheus/Alertmanager):
 ```yaml
-- alert: ClaimdeskOutboxDead
-  expr: claimdesk_outbox_dead > 0
+- alert: LodgeOutboxDead
+  expr: lodge_outbox_dead > 0
   for: 1m
-- alert: ClaimdeskOutboxStuck
-  expr: claimdesk_outbox_oldest_pending_seconds > 120
+- alert: LodgeOutboxStuck
+  expr: lodge_outbox_oldest_pending_seconds > 120
   for: 2m
 - alert: ReportingDeadLetters
   expr: reporting_dead_letters_unresolved > 0
@@ -96,8 +96,8 @@ This repo ships the signals and the re-drive tooling; routing alerts to a pager 
 ## 6. Retention and auth knobs
 | Setting | Default | What |
 | --- | --- | --- |
-| `claimdesk.outbox.retention-days` | 7 | published outbox rows deleted after this (dead/pending rows never) |
-| `claimdesk.outbox.max-attempts` | 3 | non-retriable failures before dead-lettering |
+| `lodge.outbox.retention-days` | 7 | published outbox rows deleted after this (dead/pending rows never) |
+| `lodge.outbox.max-attempts` | 3 | non-retriable failures before dead-lettering |
 | `reporting.processed-event-retention-days` | 7 | duplicate-guard rows kept; pruning is safe because upserts are version-guarded |
-| `claimdesk.auth.rate-limit-per-minute` | 10 | login requests per client IP per minute (429 + Retry-After) |
-| `claimdesk.auth.max-failures` / `lock-minutes` | 5 / 15 | consecutive failures per email before lockout |
+| `lodge.auth.rate-limit-per-minute` | 10 | login requests per client IP per minute (429 + Retry-After) |
+| `lodge.auth.max-failures` / `lock-minutes` | 5 / 15 | consecutive failures per email before lockout |

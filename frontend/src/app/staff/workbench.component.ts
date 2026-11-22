@@ -14,7 +14,7 @@ import { MATERIAL } from '../shared/material';
 type Action = 'info' | 'approve' | 'reject' | 'settle' | 'reserve' | null;
 
 @Component({
-  selector: 'cd-workbench',
+  selector: 'lg-workbench',
   standalone: true,
   imports: [FormsModule, RouterLink, StatusBadgeComponent, TimelineComponent, ...MATERIAL],
   template: `
@@ -22,7 +22,7 @@ type Action = 'info' | 'approve' | 'reject' | 'settle' | 'reserve' | null;
     @if (detail(); as d) {
       <div class="flex flex-wrap items-center justify-between gap-4">
         <h1 class="text-2xl">{{ d.claim.claimNumber }} <span class="text-slate-500">· {{ d.claim.market }} {{ d.claim.type }}</span></h1>
-        <cd-status [status]="d.claim.status" />
+        <lg-status [status]="d.claim.status" />
       </div>
       @if (busy()) { <mat-progress-bar mode="indeterminate" /> }
 
@@ -107,7 +107,7 @@ type Action = 'info' | 'approve' | 'reject' | 'settle' | 'reserve' | null;
 
           <mat-card appearance="outlined" class="p-4">
             <h2 class="mb-3 text-lg">Timeline</h2>
-            <cd-timeline [entries]="d.timeline" [currency]="d.claim.currency" />
+            <lg-timeline [entries]="d.timeline" [currency]="d.claim.currency" />
           </mat-card>
         </div>
       </div>

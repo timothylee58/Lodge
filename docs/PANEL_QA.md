@@ -19,7 +19,7 @@ Each answer points at code or a test you can open live. Demo: `docker compose up
   counting attempts**, so an outage never dead-letters healthy rows (`OutboxPublisher`,
   `OutboxPublisherTest#brokerOutageNeverBurnsAttemptsOrDeadLettersHealthyRows`).
 - Truly bad rows (non-retriable) are dead-lettered after 3 attempts so they can't block the queue; ops API re-drives them.
-- Alert: `claimdesk.outbox.oldest.pending.seconds` grows during an outage (`docs/RUNBOOK.md` §5).
+- Alert: `lodge.outbox.oldest.pending.seconds` grows during an outage (`docs/RUNBOOK.md` §5).
 - At-least-once delivery -> the consumer is idempotent (`processed_event` + version-guarded upsert).
 - Live demo: `docker compose stop kafka`, approve in the UI (works), dashboard stays stale; `docker compose start kafka`,
   dashboard catches up.

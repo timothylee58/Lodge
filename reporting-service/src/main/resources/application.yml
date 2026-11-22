@@ -6,9 +6,9 @@ spring:
   datasource:
     # Same Postgres instance as claims-service, but its OWN schema: this service never reads claims tables.
     # In production this would be a separate database (or store) — the schema split keeps local setup to one container.
-    url: jdbc:postgresql://localhost:5432/claimdesk?currentSchema=reporting
-    username: claimdesk
-    password: claimdesk
+    url: jdbc:postgresql://localhost:5432/lodge?currentSchema=reporting
+    username: lodge
+    password: lodge
   flyway:
     enabled: true
     schemas: reporting

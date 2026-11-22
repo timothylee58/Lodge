@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, map, tap } from 'rxjs';
 import { Role, Session } from './models';
 
-const KEY = 'claimdesk.session';
+const KEY = 'lodge.session';
 
 /**
  * sessionStorage (cleared when the tab closes) rather than localStorage. A bearer token in JS-readable storage is
