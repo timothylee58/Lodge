@@ -12,6 +12,11 @@ import java.util.UUID;
 public interface OutboxRepository extends JpaRepository<OutboxEvent, UUID> {
     List<OutboxEvent> findTop100ByPublishedAtIsNullAndDeadAtIsNullOrderByCreatedAtAsc();
 
+    List<OutboxEvent> findTop100ByDeadAtIsNotNullOrderByCreatedAtAsc();
+    long countByDeadAtIsNotNull();
+    long countByPublishedAtIsNullAndDeadAtIsNull();
+    java.util.Optional<OutboxEvent> findFirstByPublishedAtIsNullAndDeadAtIsNullOrderByCreatedAtAsc();
+
     @Transactional
     @Modifying
     @Query("delete from OutboxEvent e where e.publishedAt is not null and e.publishedAt < :cutoff")

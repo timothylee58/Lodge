@@ -50,3 +50,13 @@ Challenged: a runbook nobody has run is fiction. Ran every command against the r
 Found while doing it: re-driving "the whole DLT" in a one-liner would loop unfixable messages straight back to the DLT; runbook re-drives by partition+offset instead. The DLT topic doesn't exist until the first failure.
 Compose: one `docker compose up` for everything needs two Kafka listeners (containers can't use an advertised `localhost:9092`). Services use the `dev` profile in compose rather than a new secret in the compose file.
 Gotcha repeated: zsh doesn't word-split `$VAR` holding a command; used shell functions.
+
+## Dead-letter operability and login protection
+Asked: remove "dead letters need a person with a shell" and "no login rate limiting"; describe the JWT/OIDC path.
+Accepted: per-email lockout in Postgres keyed by the *email string* (not a FK) so unknown emails behave identically; per-IP limiter as an interceptor so it runs before body parsing and bcrypt; dead letters as a table instead of a DLT topic; metrics as the alert signal.
+Challenged: the usual lockout returns 401 "account locked" for real users only, which leaks which emails exist. Overrode: unknown emails get the same counter and the same generic 429 body; a test asserts the bodies are byte-identical. Also refuse the CORRECT password while locked, otherwise guessing just continues.
+Challenged: I first wrote the failure counter as read-modify-write; replaced with one atomic `INSERT .. ON CONFLICT DO UPDATE` (stale/expired windows restart at 1) so parallel guesses can't slip past the counter.
+Challenged: replacing the Kafka DLT with a table is a design change to what block 4 shipped. Reason: a DLT topic can only be handled with console tools; a table gives list / re-drive / discard, a metric, and an audit trail. Re-drive bypasses Kafka and reuses the parser and idempotent projection, so it cannot move a claim backwards. Kept the "never drop a message" property: if recording fails the offset is not committed.
+Mistake caught by the suite: put the Clock bean inside WebConfig, which depends on the rate limiter, which needs the Clock: a circular dependency that failed all 12 integration tests at startup. Moved to its own config class.
+Verified on the real stack (not just MockMvc): lockout -> 429 + Retry-After 900 even for the correct password; per-IP cutoff at request 11; a real poison message through Kafka -> dead_letter -> 422 on re-drive -> discard -> gauge 1 -> 0; officer gets 403 on ops endpoints.
+Not done on purpose: RS256 key split and OIDC (ADR-0002 describes both), a Prometheus registry and alert delivery (rules are documented, not run).

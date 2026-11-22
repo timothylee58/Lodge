@@ -20,6 +20,10 @@ claimdesk:
     topic: claims.events
     poll-ms: 1000
     max-attempts: 3   # non-retriable publish failures before a row is dead-lettered
+  auth:
+    rate-limit-per-minute: 10   # login attempts per client IP per minute (checked before any password work)
+    max-failures: 5             # consecutive failures per email before lockout
+    lock-minutes: 15
   jwt:
     # No default on purpose: the app refuses to start without JWT_SECRET (>= 32 bytes).
     # Local dev: run with SPRING_PROFILES_ACTIVE=dev (see application-dev.yml).

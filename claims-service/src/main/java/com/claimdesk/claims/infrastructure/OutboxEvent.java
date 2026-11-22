@@ -40,6 +40,11 @@ public class OutboxEvent {
         if (attempts >= maxAttempts) this.deadAt = Instant.now();
     }
 
+    /** Operator re-drive: back into the publish queue with a fresh attempt budget. */
+    public void revive() { this.deadAt = null; this.attempts = 0; this.lastError = null; }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getDeadAt() { return deadAt; }
     public boolean isDead() { return deadAt != null; }
     public int getAttempts() { return attempts; }
     public String getLastError() { return lastError; }

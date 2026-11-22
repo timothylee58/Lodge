@@ -53,6 +53,8 @@ Integration tests use Testcontainers (real Postgres + Kafka) and need Docker. Wi
 
 ## Operations notes
 
-- Dead letters, re-drive and read-model rebuild: `docs/RUNBOOK.md` (commands verified against the real stack).
+- Dead letters (re-drive/discard API + metrics), alert rules, unlocking users, read-model rebuild: `docs/RUNBOOK.md`.
+- Login: 10 requests/min per IP and a 15-minute lockout after 5 consecutive failures per email (429 + `Retry-After`).
+  Token signing and the OIDC path: `docs/adr/0002-token-signing-and-oidc-path.md`.
 - Broker outages are retriable: the publisher waits and retries without counting attempts.
 - Poison messages on the consumer side land in `claims.events.DLT`. See `docs/ARCHITECTURE.md` for guarantees and gaps.

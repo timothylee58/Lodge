@@ -23,7 +23,7 @@ public class SecurityConfig {
                         .accessDeniedHandler((req, res, ex) -> res.setStatus(HttpStatus.FORBIDDEN.value())))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/api/reports/**").hasRole("MANAGER")
+                        .requestMatchers("/api/reports/**", "/api/ops/**", "/actuator/**").hasRole("MANAGER") // health permitted above
                         .anyRequest().denyAll())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

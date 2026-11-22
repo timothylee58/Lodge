@@ -3,9 +3,6 @@ package com.claimdesk.reporting;
 import com.jayway.jsonpath.JsonPath;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -154,7 +151,7 @@ class ReportingIntegrationTest {
     }
 
     @Test
-    void poisonMessageGoesToDltAndDoesNotBlockThePartition() {
+    void poisonMessagesAreRecordedAsDeadLettersAndDoNotBlockThePartition() throws Exception {
         var claim = UUID.randomUUID();
         var good = UUID.randomUUID();
 
@@ -167,20 +164,59 @@ class ReportingIntegrationTest {
         assertThat(jdbc.queryForObject("select reserve_amount from claim_projection where claim_id=?", BigDecimal.class, claim))
                 .isEqualByComparingTo("500");
 
-        var dead = new ArrayList<String>();
-        try (var c = new KafkaConsumer<String, String>(Map.of(
-                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
-                ConsumerConfig.GROUP_ID_CONFIG, "dlt-" + UUID.randomUUID(),
-                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
-                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class))) {
-            c.subscribe(List.of(TOPIC + ".DLT"));
-            var deadline = System.currentTimeMillis() + 20_000;
-            while (dead.size() < 2 && System.currentTimeMillis() < deadline) {
-                c.poll(Duration.ofMillis(500)).forEach(r -> { if (claim.toString().equals(r.key())) dead.add(r.value()); });
-            }
-        }
-        assertThat(dead).hasSize(2).anyMatch(v -> v.equals("this is not json"));
+        List<Object> payloads = JsonPath.read(opsGet("/api/ops/dead-letters"), "$[?(@.key=='" + claim + "')].payload");
+        assertThat(payloads).hasSize(2).contains("this is not json");
+        List<Object> errors = JsonPath.read(opsGet("/api/ops/dead-letters"), "$[?(@.key=='" + claim + "')].error");
+        assertThat(errors.toString()).contains("PoisonEventException");
+    }
+
+    String opsGet(String path) throws Exception {
+        var res = mvc.perform(get(path).header("Authorization", "Bearer " + token("MANAGER"))).andReturn();
+        assertThat(res.getResponse().getStatus()).isEqualTo(200);
+        return res.getResponse().getContentAsString();
+    }
+
+    int opsPost(String path, String role) throws Exception {
+        return mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path)
+                .header("Authorization", "Bearer " + token(role))).andReturn().getResponse().getStatus();
+    }
+
+    UUID insertDeadLetter(String payload, String key) {
+        var id = UUID.randomUUID();
+        jdbc.update("insert into dead_letter (id, topic, kafka_partition, kafka_offset, msg_key, payload, error) values (?, 't', 0, ?, ?, ?, 'DB down')",
+                id, Math.abs(id.getLeastSignificantBits() % 1_000_000), key, payload);
+        return id;
+    }
+
+    @Test
+    void operatorCanRedriveDiscardAndSeeDeadLettersAsAMetric() throws Exception {
+        // A valid event that only failed because of a transient problem at the time.
+        var claim = UUID.randomUUID();
+        var recoverable = insertDeadLetter(event(UUID.randomUUID(), claim, 7, "APPROVED", "NZ", "NZD", "321", null, null), claim.toString());
+        var garbage = insertDeadLetter("still not json", "k");
+        var junk = insertDeadLetter("{}", "k2");
+
+        var gauge = mvc.perform(get("/actuator/metrics/reporting.dead_letters.unresolved").header("Authorization", "Bearer " + token("MANAGER"))).andReturn();
+        assertThat(gauge.getResponse().getStatus()).isEqualTo(200);
+        assertThat(((Number) JsonPath.read(gauge.getResponse().getContentAsString(), "$.measurements[0].value")).intValue()).isGreaterThanOrEqualTo(3);
+
+        assertThat(opsPost("/api/ops/dead-letters/" + recoverable + "/redrive", "OFFICER")).as("officer").isEqualTo(403);
+
+        assertThat(opsPost("/api/ops/dead-letters/" + recoverable + "/redrive", "MANAGER")).isEqualTo(200);
+        assertThat(exposure("NZ")).isEqualByComparingTo("321");
+        assertThat(opsPost("/api/ops/dead-letters/" + recoverable + "/redrive", "MANAGER")).as("already resolved").isEqualTo(409);
+
+        assertThat(opsPost("/api/ops/dead-letters/" + garbage + "/redrive", "MANAGER")).as("still invalid").isEqualTo(422);
+        assertThat(jdbc.queryForObject("select redrive_attempts from dead_letter where id=?", Integer.class, garbage)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select resolved_at is null from dead_letter where id=?", Boolean.class, garbage)).isTrue();
+
+        assertThat(opsPost("/api/ops/dead-letters/" + garbage + "/discard", "MANAGER")).isEqualTo(200);
+        assertThat(jdbc.queryForObject("select resolution from dead_letter where id=?", String.class, garbage)).isEqualTo("DISCARDED");
+        assertThat(opsPost("/api/ops/dead-letters/" + UUID.randomUUID() + "/redrive", "MANAGER")).isEqualTo(404);
+
+        assertThat(opsPost("/api/ops/dead-letters/redrive-all", "MANAGER")).isEqualTo(200); // remaining {} stays unresolved
+        assertThat(jdbc.queryForObject("select resolved_at is null from dead_letter where id=?", Boolean.class, junk)).isTrue();
+        jdbc.update("update dead_letter set resolved_at = now(), resolution = 'DISCARDED' where id = ?", junk);
     }
 
     @Test

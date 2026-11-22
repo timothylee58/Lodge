@@ -54,6 +54,7 @@ class ClaimApiIntegrationTest {
         r.add("spring.datasource.password", pg::getPassword);
         r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         r.add("claimdesk.outbox.poll-ms", () -> "200");
+        r.add("claimdesk.auth.rate-limit-per-minute", () -> "100"); // the suite logs in a lot from one address
         r.add("claimdesk.jwt.secret", () -> "integration-test-secret-0123456789-abcdefghij");
     }
 
@@ -286,5 +287,122 @@ class ClaimApiIntegrationTest {
 
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 assertThat(jdbc.queryForObject("select published_at is not null from outbox_event where id=?", Boolean.class, id)).isTrue());
+    }
+
+    // ---------- login throttling ----------
+
+    MvcResult tryLogin(String email, String password, String remoteAddr) throws Exception {
+        return mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .with(r -> { r.setRemoteAddr(remoteAddr); return r; })
+                .content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password))).andReturn();
+    }
+
+    void addUser(String email) {
+        jdbc.update("insert into app_user (id,name,email,password,role,market) select gen_random_uuid(),'T',?,password,'CLAIMANT','MY' from app_user where email='aina@demo.local'", email);
+    }
+
+    @Test
+    void accountLocksAfterRepeatedFailuresEvenForTheCorrectPasswordAndUnlocksAfterwards() throws Exception {
+        addUser("lockme@demo.local");
+        for (int i = 0; i < 5; i++) assertThat(status(tryLogin("lockme@demo.local", "wrong", "10.1.1.1"))).isEqualTo(401);
+
+        var locked = tryLogin("lockme@demo.local", "password", "10.1.1.1");
+        assertThat(status(locked)).as("correct password refused while locked").isEqualTo(429);
+        assertThat(Long.parseLong(locked.getResponse().getHeader("Retry-After"))).isBetween(1L, 900L);
+
+        // Lock expires -> works again, and success clears the counter.
+        jdbc.update("update login_throttle set locked_until = now() - interval '1 second' where email='lockme@demo.local'");
+        assertThat(status(tryLogin("lockme@demo.local", "password", "10.1.1.1"))).isEqualTo(200);
+        assertThat(jdbc.queryForObject("select count(*) from login_throttle where email='lockme@demo.local'", Integer.class)).isZero();
+    }
+
+    @Test
+    void unknownEmailsAreThrottledIdenticallySoLockoutDoesNotRevealAccounts() throws Exception {
+        for (int i = 0; i < 5; i++) assertThat(status(tryLogin("nobody-here@demo.local", "x", "10.2.2.2"))).isEqualTo(401);
+        var unknown = tryLogin("nobody-here@demo.local", "x", "10.2.2.2");
+
+        addUser("real-one@demo.local");
+        for (int i = 0; i < 5; i++) tryLogin("real-one@demo.local", "x", "10.2.2.3");
+        var known = tryLogin("real-one@demo.local", "x", "10.2.2.3");
+
+        assertThat(status(unknown)).isEqualTo(429);
+        assertThat(status(known)).isEqualTo(429);
+        assertThat(body(unknown)).isEqualTo(body(known));
+    }
+
+    @Test
+    void successfulLoginResetsTheFailureCounter() throws Exception {
+        addUser("resets@demo.local");
+        for (int i = 0; i < 4; i++) tryLogin("resets@demo.local", "wrong", "10.3.3.3");
+        assertThat(status(tryLogin("resets@demo.local", "password", "10.3.3.3"))).isEqualTo(200);
+        for (int i = 0; i < 4; i++) assertThat(status(tryLogin("resets@demo.local", "wrong", "10.3.3.3"))).isEqualTo(401);
+        assertThat(status(tryLogin("resets@demo.local", "password", "10.3.3.3"))).as("4+4 failures never reached 5 in a row").isEqualTo(200);
+    }
+
+    @Test
+    void perIpRateLimitCutsOffBeforeAnyPasswordWork() throws Exception {
+        int ok = 0;
+        MvcResult last = null;
+        for (int i = 0; i < 101; i++) {
+            last = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("{}")
+                    .with(r -> { r.setRemoteAddr("10.9.9.9"); return r; })).andReturn(); // invalid body: cheap, still counted
+            if (status(last) == 400) ok++;
+        }
+        assertThat(ok).isEqualTo(100);
+        assertThat(status(last)).isEqualTo(429);
+        assertThat(last.getResponse().getHeader("Retry-After")).isNotNull();
+        assertThat(status(tryLogin("aina@demo.local", "password", "10.9.9.10"))).as("other IPs unaffected").isEqualTo(200);
+    }
+
+    // ---------- dead-letter ops API + alert metrics ----------
+
+    UUID insertDeadRow() {
+        var id = UUID.randomUUID();
+        jdbc.update("insert into outbox_event (id, aggregate_id, event_type, topic, payload, attempts, last_error, dead_at) "
+                + "values (?, gen_random_uuid(), 'OPS_TEST', 'claims.events', '{\"ops\":true}'::jsonb, 3, 'RecordTooLarge', now())", id);
+        return id;
+    }
+
+    double gauge(String token, String name) throws Exception {
+        var r = call(get("/actuator/metrics/" + name), token, null);
+        assertThat(status(r)).as(name).isEqualTo(200);
+        return ((Number) JsonPath.read(body(r), "$.measurements[0].value")).doubleValue();
+    }
+
+    @Test
+    void deadRowsAreVisibleAsAMetricListedAndRedrivenByAManagerOnly() throws Exception {
+        var mark = login("mark@demo.local");
+        var wei = login("wei@demo.local");
+        double before = gauge(mark, "claimdesk.outbox.dead");
+        var id = insertDeadRow();
+
+        assertThat(gauge(mark, "claimdesk.outbox.dead")).as("alert signal").isEqualTo(before + 1);
+        List<String> ids = JsonPath.read(body(call(get("/api/ops/outbox/dead"), mark, null)), "$[*].id");
+        assertThat(ids).contains(id.toString());
+
+        assertThat(status(call(get("/api/ops/outbox/dead"), wei, null))).as("officer").isEqualTo(403);
+        assertThat(status(call(post("/api/ops/outbox/" + id + "/redrive"), wei, null))).isEqualTo(403);
+        assertThat(status(call(get("/actuator/metrics/claimdesk.outbox.dead"), wei, null))).as("metrics are not public").isEqualTo(403);
+        assertThat(status(call(get("/actuator/health"), null, null))).as("health stays public").isEqualTo(200);
+
+        assertThat(status(call(post("/api/ops/outbox/" + id + "/redrive"), mark, null))).isEqualTo(200);
+        assertThat(status(call(post("/api/ops/outbox/" + id + "/redrive"), mark, null))).as("not dead any more").isEqualTo(409);
+        assertThat(status(call(post("/api/ops/outbox/" + UUID.randomUUID() + "/redrive"), mark, null))).isEqualTo(404);
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("select published_at is not null from outbox_event where id=?", Boolean.class, id)).isTrue());
+        assertThat(gauge(mark, "claimdesk.outbox.dead")).isEqualTo(before);
+    }
+
+    @Test
+    void redriveAllRequeuesEveryDeadRow() throws Exception {
+        var mark = login("mark@demo.local");
+        var a = insertDeadRow(); var b = insertDeadRow();
+        var r = call(post("/api/ops/outbox/redrive-all"), mark, null);
+        assertThat(status(r)).isEqualTo(200);
+        assertThat(((Number) JsonPath.read(body(r), "$.redriven")).intValue()).isGreaterThanOrEqualTo(2);
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("select count(*) from outbox_event where id in (?, ?) and published_at is not null",
+                        Integer.class, a, b)).isEqualTo(2));
     }
 }

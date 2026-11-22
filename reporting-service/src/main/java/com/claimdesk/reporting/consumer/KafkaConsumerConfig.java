@@ -1,10 +1,7 @@
 package com.claimdesk.reporting.consumer;
 
-import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -13,14 +10,12 @@ public class KafkaConsumerConfig {
 
     /**
      * One bad message must never wedge a partition (same lesson as the producer-side outbox).
-     * Poison messages go straight to <topic>.DLT; transient failures (DB blip) retry twice first.
-     * Partition -1 = let the producer pick by key, so the DLT needn't match the source partition count.
+     * Poison messages are recorded as dead letters immediately; transient failures (DB blip) retry twice first.
+     * If even recording fails the offset stays uncommitted and the record is redelivered: nothing is dropped.
      */
     @Bean
-    DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<Object, Object> template) {
-        var recoverer = new DeadLetterPublishingRecoverer(template,
-                (record, ex) -> new TopicPartition(record.topic() + ".DLT", -1));
-        var handler = new DefaultErrorHandler(recoverer, new FixedBackOff(500L, 2L));
+    DefaultErrorHandler kafkaErrorHandler(DeadLetterRecorder recorder) {
+        var handler = new DefaultErrorHandler(recorder, new FixedBackOff(500L, 2L));
         handler.addNotRetryableExceptions(PoisonEventException.class);
         return handler;
     }

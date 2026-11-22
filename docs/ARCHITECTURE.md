@@ -26,8 +26,9 @@ Snapshots (not deltas) mean a lost or skipped event is repaired by the next one 
   poison row cannot block the queue (`outbox_event.dead_at`).
 - **Consumer**: idempotent and order-tolerant. `processed_event` rejects exact redeliveries; the projection upsert
   only applies an event whose claim `version` is newer than the stored one, so late events cannot move a claim
-  backwards. Both happen in one transaction. Unparseable/invalid messages go to `claims.events.DLT` immediately;
-  transient DB errors retry twice first.
+  backwards. Both happen in one transaction. Unparseable/invalid messages are stored in `dead_letter` immediately
+  (queryable, re-drivable or discardable via an ops API, exposed as a metric); transient DB errors retry twice first.
+  If recording fails the offset is not committed, so nothing is dropped.
 
 ## Consistency and staleness
 Reports are eventually consistent. Typical lag = outbox poll (1s) + consumer (sub-second). Every report returns
@@ -38,17 +39,23 @@ write side keeps working and the outbox accumulates; reports catch up on recover
 See `docs/RUNBOOK.md` section 3 (verified): truncate projections, reset the consumer group to earliest.
 Possible because the projection depends only on the events.
 
+## Operability
+Dead outbox rows and consumer dead letters are metrics (`claimdesk.outbox.dead`, `reporting.dead_letters.unresolved`,
+plus outbox lag) and have MANAGER-only list / re-drive / discard endpoints. Procedures and alert rules: `docs/RUNBOOK.md`.
+
 ## Security
 JWT (HS256, shared secret, no default; app refuses to start without `JWT_SECRET`). Roles: CLAIMANT, OFFICER,
 MANAGER. Role gates are URL-level; ownership ("my claim", "assigned to me") is enforced in services. Claimants get
-404 for others' claims and never see reserve figures. Reports: MANAGER only. Production path: OIDC (Keycloak /
-Azure AD) with JWKS instead of a shared secret.
+404 for others' claims and never see reserve figures. Reports and ops endpoints: MANAGER only; `/actuator` other than health too. Login is protected by a per-IP rate limit and a per-email lockout (see ADR-0002).
+Production path: OIDC (Keycloak / Azure AD) with JWKS instead of a shared secret: `docs/adr/0002-token-signing-and-oidc-path.md`.
 
 ## Known gaps (deliberate)
 - Exposure is per market and currency with per-currency totals; **no FX conversion** (never sums across currencies).
 - Workload lists officers once they have been assigned a claim (roster learned from events); a brand-new officer with
   no assignment yet is invisible to reporting. Fix = publish user lifecycle events.
-- JWT shared secret and duplicated verifier code across the two services; OIDC with JWKS is the production path.
-- No refresh tokens, rate limiting or account lockout on login.
-- Dead-lettered events (both sides) are re-driven by hand: see `docs/RUNBOOK.md`. No re-drive tooling or alerting.
+- Token signing uses a shared HS256 secret and duplicated verifier code; OIDC/JWKS is the production path (ADR-0002).
+- Login rate limit is per instance and in memory; lockout can be used to lock a known email out (bounded by the per-IP
+  limit). No MFA, no refresh tokens, no password reset. All of this goes away with an IdP (ADR-0002).
+- Alerting: metrics, re-drive tooling and example rules exist; wiring them to a pager is not built or tested.
+- Re-drive actor is only logged; there is no durable audit table for operator actions.
 - `processed_event` and published `outbox_event` rows are pruned after 7 days (configurable).

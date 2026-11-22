@@ -14,18 +14,26 @@ public class AuthService {
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
+    private final LoginThrottle throttle;
 
-    public AuthService(UserRepository users, PasswordEncoder encoder, JwtService jwt) {
+    public AuthService(UserRepository users, PasswordEncoder encoder, JwtService jwt, LoginThrottle throttle) {
+        this.throttle = throttle;
         this.users = users; this.encoder = encoder; this.jwt = jwt;
         this.dummyHash = encoder.encode("not-a-real-password");
     }
 
     public record Result(String token, long expiresInSeconds, AppUser user) {}
 
-    public Result login(String email, String password) {
-        var user = users.findByEmailIgnoreCase(email).orElse(null);
+    public Result login(String rawEmail, String password) {
+        var key = LoginThrottle.normalise(rawEmail);
+        throttle.assertNotLocked(key); // same 429 for real and unknown emails
+        var user = users.findByEmailIgnoreCase(rawEmail.trim()).orElse(null);
         boolean ok = encoder.matches(password, user == null ? dummyHash : user.getPassword());
-        if (user == null || !ok) throw new BadCredentialsException("Invalid email or password");
+        if (user == null || !ok) {
+            throttle.recordFailure(key);
+            throw new BadCredentialsException("Invalid email or password");
+        }
+        throttle.recordSuccess(key);
         return new Result(jwt.issue(user), jwt.ttlSeconds(), user);
     }
 }

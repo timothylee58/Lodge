@@ -31,6 +31,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/auth/login", "/actuator/health", "/v3/api-docs/**",
                                 "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/api/ops/**", "/actuator/**").hasRole("MANAGER") // after the health permitAll above
                         .requestMatchers(HttpMethod.GET, "/api/staff/**").hasAnyRole("OFFICER", "MANAGER")
                         .requestMatchers("/api/staff/**").hasRole("OFFICER")
                         .requestMatchers(HttpMethod.POST, "/api/claims").hasRole("CLAIMANT")

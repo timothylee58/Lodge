@@ -5,7 +5,9 @@ import com.claimdesk.claims.domain.InvalidTransitionException;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.claimdesk.claims.application.TooManyAttemptsException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.ProblemDetail;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
@@ -50,6 +52,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BadCredentialsException.class)
     ProblemDetail badCredentials(BadCredentialsException e) {
         return problem(HttpStatus.UNAUTHORIZED, "Unauthorized", e.getMessage());
+    }
+
+    @ExceptionHandler(TooManyAttemptsException.class)
+    ResponseEntity<ProblemDetail> tooManyAttempts(TooManyAttemptsException e) {
+        // Deliberately generic: identical for real and unknown accounts.
+        var pd = problem(HttpStatus.TOO_MANY_REQUESTS, "Too many attempts", "Too many login attempts. Try again later.");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(pd);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
