@@ -35,7 +35,7 @@ Demo accounts exist only in the `dev` profile and the tests; a default start cre
 | 1 | Git history showing the development process | `git log`: block-by-block feature commits, then review-driven `fix:` commits |
 | 2 | Working application, started locally | `docker compose up --build` (above) |
 | 3 | AI working journal: asked / accepted / challenged / overrode | [`docs/AI_JOURNAL.md`](docs/AI_JOURNAL.md); curated, evidence-linked view: [`docs/DIRECTION_LOG.md`](docs/DIRECTION_LOG.md) |
-| 4 | Supporting documentation | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr), [`docs/RUNBOOK.md`](docs/RUNBOOK.md), [`docs/PANEL_QA.md`](docs/PANEL_QA.md) |
+| 4 | Supporting documentation | [`docs/DECOMPOSITION.md`](docs/DECOMPOSITION.md) (the seven decomposition questions), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/adr/`](docs/adr), [`docs/RUNBOOK.md`](docs/RUNBOOK.md), [`docs/PANEL_QA.md`](docs/PANEL_QA.md) |
 
 **Panel questions** (why two services, Kafka down, concurrent assign, API contract, exposure staleness, rejected AI
 code) are answered with code and test references in [`docs/PANEL_QA.md`](docs/PANEL_QA.md).
