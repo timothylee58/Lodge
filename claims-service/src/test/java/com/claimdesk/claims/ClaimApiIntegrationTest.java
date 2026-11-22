@@ -60,6 +60,7 @@ class ClaimApiIntegrationTest {
     @LocalServerPort int port;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.claimdesk.claims.infrastructure.OutboxCleaner cleaner;
     @SpyBean ObjectMapper json;
 
     static final String MOTOR_POLICY = "10000000-0000-0000-0000-000000000001"; // limit 50 000, holder Aina
@@ -254,5 +255,36 @@ class ClaimApiIntegrationTest {
         assertThat(HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.discarding()).statusCode()).as("claimant on staff API").isEqualTo(403);
         var anon = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/staff/claims")).build();
         assertThat(HttpClient.newHttpClient().send(anon, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void cleanupDeletesOnlyOldPublishedRows() {
+        var oldPublished = UUID.randomUUID(); var oldDead = UUID.randomUUID(); var pending = UUID.randomUUID();
+        String ins = "insert into outbox_event (id, aggregate_id, event_type, topic, payload, created_at, published_at, dead_at) "
+                + "values (?, gen_random_uuid(), 'T', 'no.such.topic.cleanup', '{}'::jsonb, now() - interval '30 days', %s, %s)";
+        jdbc.update(ins.formatted("now() - interval '20 days'", "null"), oldPublished);
+        jdbc.update(ins.formatted("null", "now() - interval '20 days'"), oldDead);
+        jdbc.update(ins.formatted("null", "now()").replace("now())", "null)"), pending); // pending: neither published nor dead
+        cleaner.prune();
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where id=?", Integer.class, oldPublished)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where id=?", Integer.class, oldDead)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where id=?", Integer.class, pending)).isEqualTo(1);
+        jdbc.update("delete from outbox_event where id in (?, ?)", oldDead, pending); // don't leave rows for the publisher
+    }
+
+    /** Proves the runbook's re-drive SQL actually works: a dead row stays dead until revived, then gets published. */
+    @Test
+    void deadRowIsRedrivenByTheRunbookSql() throws Exception {
+        var id = UUID.randomUUID();
+        jdbc.update("insert into outbox_event (id, aggregate_id, event_type, topic, payload, attempts, last_error, dead_at) "
+                + "values (?, gen_random_uuid(), 'REDRIVE_TEST', 'claims.events', '{\"redrive\":true}'::jsonb, 3, 'boom', now())", id);
+        Thread.sleep(1500); // several publisher ticks (poll-ms=200)
+        assertThat(jdbc.queryForObject("select published_at is null from outbox_event where id=?", Boolean.class, id)).isTrue();
+
+        // --- exactly the statement in docs/RUNBOOK.md ---
+        jdbc.update("UPDATE outbox_event SET dead_at = NULL, attempts = 0, last_error = NULL WHERE id = ?", id);
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("select published_at is not null from outbox_event where id=?", Boolean.class, id)).isTrue());
     }
 }

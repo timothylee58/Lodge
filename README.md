@@ -5,8 +5,17 @@ Backend-first; see `docs/adr/0001-modular-monolith-plus-reporting.md` and `docs/
 
 ## Run locally
 
+**Everything in containers (one command):**
+
 ```bash
-docker compose up -d                      # Postgres + Kafka (infra only)
+docker compose up --build                 # Postgres, Kafka, claims-service :8080, reporting-service :8081
+# if port 5432 is taken on your machine:  POSTGRES_PORT=55432 docker compose up --build
+```
+
+**From your IDE** (fast iteration): start only the infra, then run each service with the `dev` profile:
+
+```bash
+docker compose up -d postgres kafka
 cd claims-service
 SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run   # or run from your IDE with that env var
 open http://localhost:8080/swagger-ui.html
@@ -29,8 +38,9 @@ throwaway local value (`application-dev.yml`). Anywhere else, set `JWT_SECRET` i
 Demo users (password `password`): `aina@demo.local` (claimant), `wei@demo.local` / `priya@demo.local` (officers),
 `mark@demo.local` (manager). `POST /api/auth/login` returns a bearer token.
 
-Ports: Postgres `5432` and Kafka `9092` are published; if 5432 is already in use on your machine, remap it in
-`docker-compose.yml` and in `spring.datasource.url`.
+Kafka has two listeners (`kafka:19092` for containers, `localhost:9092` for your machine). Postgres defaults to host
+port 5432; set `POSTGRES_PORT` to move it (then use that port in `spring.datasource.url` for IDE runs).
+The compose services run the `dev` profile (throwaway local JWT secret) — local use only.
 
 ## Tests
 
@@ -43,7 +53,6 @@ Integration tests use Testcontainers (real Postgres + Kafka) and need Docker. Wi
 
 ## Operations notes
 
-- Outbox rows that fail with a non-retriable error are dead-lettered after 3 attempts (`outbox_event.dead_at`):
-  `SELECT id, event_type, attempts, last_error FROM outbox_event WHERE dead_at IS NOT NULL;`
+- Dead letters, re-drive and read-model rebuild: `docs/RUNBOOK.md` (commands verified against the real stack).
 - Broker outages are retriable: the publisher waits and retries without counting attempts.
 - Poison messages on the consumer side land in `claims.events.DLT`. See `docs/ARCHITECTURE.md` for guarantees and gaps.

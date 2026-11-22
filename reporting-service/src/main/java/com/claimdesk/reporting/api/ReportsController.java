@@ -20,7 +20,7 @@ public class ReportsController {
 
     public ReportsController(ReportQueries queries) { this.queries = queries; }
 
-    public record ExposureReport(Instant asOf, Instant generatedAt, List<ExposureRow> rows) {}
+    public record ExposureReport(Instant asOf, Instant generatedAt, List<ExposureRow> rows, List<CurrencyTotal> totalsByCurrency) {}
     public record StatusReport(Instant asOf, Instant generatedAt, List<StatusRow> rows) {}
     public record WorkloadReport(Instant asOf, Instant generatedAt, long unassignedClaims, List<OfficerWorkload> officers) {}
     public record OfficerWorkload(java.util.UUID assigneeId, String assigneeName, long openClaims,
@@ -28,7 +28,7 @@ public class ReportsController {
 
     @GetMapping("/exposure")
     public ExposureReport exposure() {
-        return new ExposureReport(queries.lastEventAt(), Instant.now(), queries.exposure());
+        return new ExposureReport(queries.lastEventAt(), Instant.now(), queries.exposure(), queries.exposureByCurrency());
     }
 
     @GetMapping("/claims-by-status")
@@ -36,7 +36,7 @@ public class ReportsController {
         return new StatusReport(queries.lastEventAt(), Instant.now(), queries.claimsByStatus());
     }
 
-    /** Lists officers who currently hold open claims; officers with none don't appear (no user data here). */
+    /** Officers ever assigned a claim, incl. those now at 0. A brand-new officer appears after their first assignment. */
     @GetMapping("/workload")
     public WorkloadReport workload() {
         var officers = queries.workload().stream().map(w -> new OfficerWorkload(w.assigneeId(), w.assigneeName(),

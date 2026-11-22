@@ -17,6 +17,7 @@ public class ReportQueries {
     public ReportQueries(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     public record ExposureRow(String market, String currency, String type, long openClaims, BigDecimal exposure) {}
+    public record CurrencyTotal(String currency, long openClaims, BigDecimal exposure) {}
     public record StatusRow(String market, String status, long claims) {}
     public record WorkloadRow(UUID assigneeId, String assigneeName, long underReview, long pendingInfo, long approved) {
         public long openClaims() { return underReview + pendingInfo + approved; }
@@ -40,17 +41,25 @@ public class ReportQueries {
                 (rs, i) -> new StatusRow(rs.getString("market"), rs.getString("status"), rs.getLong("n")));
     }
 
+    /** Open exposure summed per currency across markets. Never mixes currencies (no FX). */
+    public List<CurrencyTotal> exposureByCurrency() {
+        return jdbc.query("SELECT currency, count(*) AS n, COALESCE(sum(reserve_amount), 0) AS exposure " +
+                        "FROM claim_projection WHERE " + OPEN + " GROUP BY currency ORDER BY currency",
+                (rs, i) -> new CurrencyTotal(rs.getString("currency"), rs.getLong("n"), rs.getBigDecimal("exposure")));
+    }
+
+    /** Every officer ever seen on an assignment, including those currently at 0 open claims. */
     public List<WorkloadRow> workload() {
         return jdbc.query("""
-                SELECT assignee_id, max(assignee_name) AS name,
-                       count(*) FILTER (WHERE status = 'UNDER_REVIEW') AS under_review,
-                       count(*) FILTER (WHERE status = 'PENDING_INFO') AS pending_info,
-                       count(*) FILTER (WHERE status = 'APPROVED')     AS approved
-                FROM claim_projection
-                WHERE assignee_id IS NOT NULL AND status IN ('UNDER_REVIEW', 'PENDING_INFO', 'APPROVED')
-                GROUP BY assignee_id ORDER BY name
+                SELECT o.officer_id, o.name,
+                       count(c.claim_id) FILTER (WHERE c.status = 'UNDER_REVIEW') AS under_review,
+                       count(c.claim_id) FILTER (WHERE c.status = 'PENDING_INFO') AS pending_info,
+                       count(c.claim_id) FILTER (WHERE c.status = 'APPROVED')     AS approved
+                FROM known_officer o
+                LEFT JOIN claim_projection c ON c.assignee_id = o.officer_id
+                GROUP BY o.officer_id, o.name ORDER BY o.name
                 """,
-                (rs, i) -> new WorkloadRow(rs.getObject("assignee_id", UUID.class), rs.getString("name"),
+                (rs, i) -> new WorkloadRow(rs.getObject("officer_id", UUID.class), rs.getString("name"),
                         rs.getLong("under_review"), rs.getLong("pending_info"), rs.getLong("approved")));
     }
 

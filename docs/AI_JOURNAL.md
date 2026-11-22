@@ -41,3 +41,12 @@ Challenged: hand-built test JSON proves nothing about the real contract. Overrod
 Found by that real run (not by any MockMvc test): role-denied requests returned **401, not 403** on a real server. The default AccessDeniedHandler uses sendError(), the container forwards to /error, which is unauthenticated, so Spring Security answers 401. Affected claims-service too (its ITs only used MockMvc, which has no error dispatch). Fix: set the status directly in an accessDeniedHandler; added a RANDOM_PORT test in both services that fails without it (verified: red before, green after).
 Caught myself: JsonPath filter + `[0]` returns a nested array; test helper fixed, not the assertion weakened.
 Scope additions beyond the PRD list: `/api/reports/claims-by-status` (the dashboard needs open-by-status-and-market).
+
+## Closing the open items
+Asked: fix what is fixable from the "still open" list, give advice on the rest.
+Accepted: roster table (`known_officer`) fed by assignment events for the workload report; per-currency totals instead of FX; retention jobs; runbook instead of building re-drive tooling.
+Challenged: I had only listed `processed_event` as unbounded. Reading my own outbox code showed published `outbox_event` rows grow forever too — same bug class on the producer side, missed in my own gap list. Fixed (dead/pending rows deliberately never auto-deleted) with a test.
+Challenged: a runbook nobody has run is fiction. Ran every command against the real stack: DLT inspect, single-message re-drive (valid event placed on the DLT reappeared in the projection), and the full read-model rebuild by offset reset (state identical afterwards). The outbox revive SQL is an integration test that fails if the statement stops working.
+Found while doing it: re-driving "the whole DLT" in a one-liner would loop unfixable messages straight back to the DLT; runbook re-drives by partition+offset instead. The DLT topic doesn't exist until the first failure.
+Compose: one `docker compose up` for everything needs two Kafka listeners (containers can't use an advertised `localhost:9092`). Services use the `dev` profile in compose rather than a new secret in the compose file.
+Gotcha repeated: zsh doesn't word-split `$VAR` holding a command; used shell functions.

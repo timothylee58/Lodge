@@ -1,3 +1,13 @@
+# One command:  docker compose up --build        (claims API :8080, reports API :8081)
+# IDE workflow: docker compose up -d postgres kafka   then run the services from your IDE (profile "dev").
+#
+# Kafka has two listeners: kafka:19092 for containers, localhost:9092 for processes on your machine.
+# The services run with the "dev" profile, which carries a throwaway local JWT secret. LOCAL USE ONLY.
+x-service-env: &service-env
+  SPRING_PROFILES_ACTIVE: dev
+  SPRING_DATASOURCE_PASSWORD: claimdesk
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,7 +15,7 @@ services:
       POSTGRES_DB: claimdesk
       POSTGRES_USER: claimdesk
       POSTGRES_PASSWORD: claimdesk
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_PORT:-5432}:5432"]   # set POSTGRES_PORT if 5432 is taken on your machine
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U claimdesk"]
@@ -18,13 +28,41 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_NUM_PARTITIONS: 3
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  claims-service:
+    build: ./claims-service
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    ports: ["8080:8080"]
+    restart: on-failure
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/claimdesk
+
+  reporting-service:
+    build: ./reporting-service
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    ports: ["8081:8081"]
+    restart: on-failure
+    environment:
+      <<: *service-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/claimdesk?currentSchema=reporting
 
 volumes:
   pgdata:

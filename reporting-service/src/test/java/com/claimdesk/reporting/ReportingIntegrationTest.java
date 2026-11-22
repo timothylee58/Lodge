@@ -56,6 +56,7 @@ class ReportingIntegrationTest {
     @LocalServerPort int port;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.claimdesk.reporting.projection.ProcessedEventPruner pruner;
     @Autowired KafkaTemplate<Object, Object> producer;
 
     // ---------- helpers ----------
@@ -203,5 +204,41 @@ class ReportingIntegrationTest {
         assertThat(HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.discarding()).statusCode()).as("officer on reports").isEqualTo(403);
         var anon = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/reports/exposure")).build();
         assertThat(HttpClient.newHttpClient().send(anon, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void officerWhoClearedTheirQueueStillAppearsWithZero() throws Exception {
+        var officer = UUID.randomUUID(); var claim = UUID.randomUUID(); var last = UUID.randomUUID();
+        send(claim, event(UUID.randomUUID(), claim, 1, "UNDER_REVIEW", "AU", "AUD", "0", officer, "Zed Officer"));
+        send(claim, event(last, claim, 2, "SETTLED", "AU", "AUD", "0", officer, "Zed Officer"));
+        await().atMost(Duration.ofSeconds(30)).until(() -> processed(last));
+
+        var workload = report("/api/reports/workload");
+        assertThat(num(workload, "$.officers[?(@.assigneeId=='" + officer + "')].openClaims")).isZero();
+        List<Object> name = JsonPath.read(workload, "$.officers[?(@.assigneeId=='" + officer + "')].assigneeName");
+        assertThat(name).containsExactly("Zed Officer");
+    }
+
+    @Test
+    void exposureTotalsPerCurrencyNeverMixCurrencies() throws Exception {
+        var a = UUID.randomUUID(); var b = UUID.randomUUID(); var last = UUID.randomUUID();
+        send(a, event(UUID.randomUUID(), a, 1, "APPROVED", "SG", "SGD", "100", null, null));
+        send(b, event(last, b, 1, "APPROVED", "MY", "MYR", "7", null, null));
+        await().atMost(Duration.ofSeconds(30)).until(() -> processed(last));
+        var body = report("/api/reports/exposure");
+        List<Object> sgd = JsonPath.read(body, "$.totalsByCurrency[?(@.currency=='SGD')].exposure");
+        assertThat(sgd).isNotEmpty();
+        assertThat(new BigDecimal(sgd.get(0).toString())).isGreaterThanOrEqualTo(new BigDecimal("100"));
+        assertThat(JsonPath.<List<Object>>read(body, "$.totalsByCurrency[?(@.currency=='MYR')]")).isNotEmpty();
+    }
+
+    @Test
+    void pruningRemovesOldProcessedEventsOnly() {
+        var old = UUID.randomUUID(); var fresh = UUID.randomUUID();
+        jdbc.update("insert into processed_event (event_id, processed_at) values (?, now() - interval '10 days')", old);
+        jdbc.update("insert into processed_event (event_id) values (?)", fresh);
+        assertThat(pruner.prune()).isGreaterThanOrEqualTo(1);
+        assertThat(processed(old)).isFalse();
+        assertThat(processed(fresh)).isTrue();
     }
 }

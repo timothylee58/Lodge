@@ -35,8 +35,7 @@ Reports are eventually consistent. Typical lag = outbox poll (1s) + consumer (su
 write side keeps working and the outbox accumulates; reports catch up on recovery.
 
 ## Rebuilding the read model
-Truncate `claim_projection` and `processed_event`, then reset the consumer group's offsets to earliest
-(`kafka-consumer-groups.sh --group reporting-service --topic claims.events --reset-offsets --to-earliest --execute`).
+See `docs/RUNBOOK.md` section 3 (verified): truncate projections, reset the consumer group to earliest.
 Possible because the projection depends only on the events.
 
 ## Security
@@ -46,9 +45,10 @@ MANAGER. Role gates are URL-level; ownership ("my claim", "assigned to me") is e
 Azure AD) with JWKS instead of a shared secret.
 
 ## Known gaps (deliberate)
-- Exposure is per market **and currency**, no FX conversion.
-- Workload lists only officers who currently hold open claims (reporting has no user table).
-- `processed_event` grows unbounded; prune to the topic retention.
-- JWT shared secret and duplicated verifier code across services; a shared lib / JWKS is the next step.
+- Exposure is per market and currency with per-currency totals; **no FX conversion** (never sums across currencies).
+- Workload lists officers once they have been assigned a claim (roster learned from events); a brand-new officer with
+  no assignment yet is invisible to reporting. Fix = publish user lifecycle events.
+- JWT shared secret and duplicated verifier code across the two services; OIDC with JWKS is the production path.
 - No refresh tokens, rate limiting or account lockout on login.
-- Dead-lettered events (both sides) need an operator re-drive; none is built.
+- Dead-lettered events (both sides) are re-driven by hand: see `docs/RUNBOOK.md`. No re-drive tooling or alerting.
+- `processed_event` and published `outbox_event` rows are pruned after 7 days (configurable).

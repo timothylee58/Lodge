@@ -31,6 +31,14 @@ public class ProjectionService {
             log.debug("Duplicate event {} ignored", m.eventId());
             return false;
         }
+        if (m.assigneeId() != null && m.assigneeName() != null) {
+            // Roster for the workload report, so an officer who clears their queue still shows up with 0.
+            jdbc.update("""
+                    INSERT INTO known_officer (officer_id, name, last_seen) VALUES (?, ?, ?)
+                    ON CONFLICT (officer_id) DO UPDATE SET name = EXCLUDED.name,
+                        last_seen = GREATEST(known_officer.last_seen, EXCLUDED.last_seen)
+                    """, m.assigneeId(), m.assigneeName(), Timestamp.from(m.occurredAt()));
+        }
         int changed = jdbc.update("""
                 INSERT INTO claim_projection (claim_id, claim_number, market, type, currency, status,
                                               reserve_amount, assignee_id, assignee_name, version, occurred_at)
