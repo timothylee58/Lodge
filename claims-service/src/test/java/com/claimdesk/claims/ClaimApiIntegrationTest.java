@@ -1,0 +1,206 @@
+package com.claimdesk.claims;
+
+import com.jayway.jsonpath.JsonPath;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.util.*;
+import java.util.concurrent.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+
+/** Needs Docker (Testcontainers): real Postgres + Kafka. Seed users all have password "password". */
+@SpringBootTest
+@AutoConfigureMockMvc
+@Testcontainers
+class ClaimApiIntegrationTest {
+
+    @Container static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine");
+    @Container static KafkaContainer kafka = new KafkaContainer("apache/kafka:3.8.0");
+
+    @DynamicPropertySource
+    static void props(DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", pg::getJdbcUrl);
+        r.add("spring.datasource.username", pg::getUsername);
+        r.add("spring.datasource.password", pg::getPassword);
+        r.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+        r.add("claimdesk.outbox.poll-ms", () -> "200");
+    }
+
+    @Autowired MockMvc mvc;
+    @Autowired JdbcTemplate jdbc;
+
+    static final String MOTOR_POLICY = "10000000-0000-0000-0000-000000000001"; // limit 50 000, holder Aina
+
+    // ---------- helpers ----------
+    String login(String email) throws Exception {
+        var res = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\",\"password\":\"password\"}".formatted(email))).andReturn();
+        assertThat(res.getResponse().getStatus()).as("login " + email).isEqualTo(200);
+        return JsonPath.read(res.getResponse().getContentAsString(), "$.token");
+    }
+
+    MvcResult call(MockHttpServletRequestBuilder b, String token, String body) throws Exception {
+        if (token != null) b.header("Authorization", "Bearer " + token);
+        if (body != null) b.contentType(MediaType.APPLICATION_JSON).content(body);
+        return mvc.perform(b).andReturn();
+    }
+
+    int status(MvcResult r) { return r.getResponse().getStatus(); }
+    String json(MvcResult r) throws Exception { return r.getResponse().getContentAsString(); }
+
+    String submitClaim(String claimantToken) throws Exception {
+        var r = call(post("/api/claims"), claimantToken, """
+                {"policyId":"%s","incidentDate":"%s","description":"Rear-ended at junction"}"""
+                .formatted(MOTOR_POLICY, LocalDate.now().minusDays(1)));
+        assertThat(status(r)).isEqualTo(201);
+        return JsonPath.read(json(r), "$.claim.id");
+    }
+
+    String staff(String id, String action) { return "/api/staff/claims/" + id + "/" + action; }
+
+    // ---------- tests ----------
+
+    @Test
+    void authGates() throws Exception {
+        assertThat(status(call(get("/api/claims"), null, null))).isEqualTo(401);
+        assertThat(status(call(get("/api/claims"), "forged.token.value", null))).isEqualTo(401);
+        var bad = call(post("/api/auth/login"), null, "{\"email\":\"aina@demo.local\",\"password\":\"nope\"}");
+        assertThat(status(bad)).isEqualTo(401);
+        var unknown = call(post("/api/auth/login"), null, "{\"email\":\"ghost@demo.local\",\"password\":\"nope\"}");
+        assertThat(json(unknown)).isEqualTo(json(bad)); // no user enumeration
+
+        var aina = login("aina@demo.local");
+        assertThat(status(call(get("/api/staff/claims"), aina, null))).as("claimant on staff API").isEqualTo(403);
+
+        var mark = login("mark@demo.local");
+        var id = submitClaim(aina);
+        assertThat(status(call(get("/api/staff/claims?status=SUBMITTED&assignee=unassigned"), mark, null))).isEqualTo(200);
+        assertThat(status(call(post(staff(id, "assign")), mark, null))).as("manager cannot transition").isEqualTo(403);
+        assertThat(status(call(post("/api/claims"), login("wei@demo.local"), "{}"))).as("officer cannot submit").isEqualTo(403);
+    }
+
+    @Test
+    void fullLifecycleWithTimelineRedactionAndOrderedEvents() throws Exception {
+        var aina = login("aina@demo.local");
+        var wei = login("wei@demo.local");
+        var id = submitClaim(aina);
+
+        var assign = call(post(staff(id, "assign")), wei, null);
+        assertThat(status(assign)).isEqualTo(200);
+        assertThat((String) JsonPath.read(json(assign), "$.claim.status")).isEqualTo("UNDER_REVIEW");
+
+        assertThat(status(call(post(staff(id, "info-requests")), wei, "{\"question\":\"Police report number?\"}"))).isEqualTo(200);
+        assertThat(status(call(post("/api/claims/" + id + "/info-responses"), aina, "{\"response\":\"PDRM/1234\"}"))).isEqualTo(200);
+        assertThat(status(call(post("/api/claims/" + id + "/info-responses"), aina, "{\"response\":\"again\"}")))
+                .as("no open request / wrong state").isEqualTo(409);
+
+        assertThat(status(call(post(staff(id, "approve")), wei, "{\"reserveAmount\":60000}"))).as("reserve above limit").isEqualTo(400);
+        assertThat(status(call(post(staff(id, "approve")), wei, "{\"reserveAmount\":8000}"))).isEqualTo(200);
+        assertThat(status(call(patch(staff(id, "reserve")), wei, "{\"reserveAmount\":9000}"))).isEqualTo(200);
+        assertThat(status(call(post(staff(id, "settle")), wei, "{\"amount\":60000}"))).as("settlement above limit").isEqualTo(400);
+        var settled = call(post(staff(id, "settle")), wei, "{\"amount\":7500}");
+        assertThat(status(settled)).isEqualTo(200);
+        assertThat((String) JsonPath.read(json(settled), "$.claim.status")).isEqualTo("SETTLED");
+        assertThat(status(call(patch(staff(id, "reserve")), wei, "{\"reserveAmount\":1}"))).as("closed claim").isEqualTo(409);
+
+        // Claimant view: no reserve figures anywhere, but sees the payout and the full story.
+        var view = json(call(get("/api/claims/" + id), aina, null));
+        assertThat((Object) JsonPath.read(view, "$.claim.reserveAmount")).isNull();
+        assertThat(((Number) JsonPath.read(view, "$.claim.settledAmount")).doubleValue()).isEqualTo(7500.0);
+        List<String> types = JsonPath.read(view, "$.timeline[*].type");
+        assertThat(types).containsExactly("CLAIM_SUBMITTED", "CLAIM_ASSIGNED", "INFO_REQUESTED", "INFO_PROVIDED",
+                "CLAIM_APPROVED", "CLAIM_SETTLED"); // RESERVE_CHANGED hidden
+        assertThat(view).doesNotContain("reserveAmount\":8000").doesNotContain("9000");
+
+        // Staff view keeps it.
+        List<String> staffTypes = JsonPath.read(json(call(get("/api/claims/" + id), wei, null)), "$.timeline[*].type");
+        assertThat(staffTypes).contains("RESERVE_CHANGED").hasSize(7);
+
+        // Outbox: one row per event, all eventually published, and Kafka sees them in version order.
+        var uuid = UUID.fromString(id);
+        assertThat(jdbc.queryForObject("select count(*) from outbox_event where aggregate_id=?", Integer.class, uuid)).isEqualTo(7);
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("select count(*) from outbox_event where aggregate_id=? and published_at is null",
+                        Integer.class, uuid)).isZero());
+
+        var versions = new ArrayList<Integer>();
+        try (var consumer = new KafkaConsumer<String, String>(Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
+                ConsumerConfig.GROUP_ID_CONFIG, "it-" + UUID.randomUUID(),
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class))) {
+            consumer.subscribe(List.of("claims.events"));
+            var deadline = System.currentTimeMillis() + 20_000;
+            while (versions.size() < 7 && System.currentTimeMillis() < deadline) {
+                consumer.poll(Duration.ofMillis(500)).forEach(rec -> {
+                    if (rec.key().equals(id)) versions.add(((Number) JsonPath.read(rec.value(), "$.version")).intValue());
+                });
+            }
+        }
+        assertThat(versions).hasSize(7).isSorted().doesNotHaveDuplicates();
+    }
+
+    @Test
+    void concurrentAssignExactlyOneWins() throws Exception {
+        var id = submitClaim(login("aina@demo.local"));
+        var wei = login("wei@demo.local");
+        var priya = login("priya@demo.local");
+
+        var start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        List<Future<Integer>> results = new ArrayList<>();
+        for (var token : List.of(wei, priya)) {
+            results.add(pool.submit(() -> { start.await(); return status(call(post(staff(id, "assign")), token, null)); }));
+        }
+        start.countDown();
+        var codes = new ArrayList<Integer>();
+        for (var f : results) codes.add(f.get(20, TimeUnit.SECONDS));
+        pool.shutdown();
+
+        assertThat(codes).containsExactlyInAnyOrder(200, 409);
+        assertThat(jdbc.queryForObject("select count(*) from claim_event where claim_id=? and type='CLAIM_ASSIGNED'",
+                Integer.class, UUID.fromString(id))).isEqualTo(1);
+    }
+
+    @Test
+    void ownershipIsEnforcedOnTheBackend() throws Exception {
+        var aina = login("aina@demo.local");
+        var id = submitClaim(aina);
+        var wei = login("wei@demo.local");
+        var priya = login("priya@demo.local");
+        call(post(staff(id, "assign")), wei, null);
+
+        assertThat(status(call(post(staff(id, "approve")), priya, "{\"reserveAmount\":100}"))).as("not the assignee").isEqualTo(403);
+        assertThat(status(call(post(staff(id, "reject")), priya, "{\"reason\":\"x\"}"))).isEqualTo(403);
+
+        // A second claimant must not see (or answer on) Aina's claim — and gets 404, not 403.
+        jdbc.update("insert into app_user (id,name,email,password,role,market) select gen_random_uuid(),'Eve','eve@demo.local',password,'CLAIMANT','MY' from app_user where email='aina@demo.local'");
+        var eve = login("eve@demo.local");
+        assertThat(status(call(get("/api/claims/" + id), eve, null))).isEqualTo(404);
+        assertThat(status(call(post("/api/claims/" + id + "/info-responses"), eve, "{\"response\":\"hi\"}"))).isEqualTo(404);
+        assertThat(json(call(get("/api/claims"), eve, null))).isEqualTo("[]");
+        var submitOnAinasPolicy = call(post("/api/claims"), eve,
+                "{\"policyId\":\"%s\",\"incidentDate\":\"%s\",\"description\":\"x\"}".formatted(MOTOR_POLICY, LocalDate.now()));
+        assertThat(status(submitOnAinasPolicy)).as("someone else's policy").isEqualTo(404);
+    }
+}
