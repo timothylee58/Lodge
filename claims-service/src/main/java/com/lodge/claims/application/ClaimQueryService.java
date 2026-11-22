@@ -7,6 +7,8 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
@@ -26,10 +28,13 @@ public class ClaimQueryService {
     private final UserRepository users;
     private final PolicyRepository policies;
     private final SlaPolicy sla;
+    private final NamedParameterJdbcTemplate jdbc;
 
     public ClaimQueryService(ClaimRepository claims, ClaimEventRepository events, InfoRequestRepository infoRequests,
-                             UserRepository users, PolicyRepository policies, SlaPolicy sla) {
+                             UserRepository users, PolicyRepository policies, SlaPolicy sla,
+                             NamedParameterJdbcTemplate jdbc) {
         this.sla = sla;
+        this.jdbc = jdbc;
         this.claims = claims; this.events = events; this.infoRequests = infoRequests;
         this.users = users; this.policies = policies;
     }
@@ -70,9 +75,13 @@ public class ClaimQueryService {
         // Not yours == doesn't exist, for claimants.
         if (!staff && !claim.getClaimantId().equals(me.id())) throw new EntityNotFoundException("Claim " + claimId);
 
-        var timeline = events.findByClaimIdOrderByCreatedAtAsc(claimId).stream()
-                .filter(e -> staff || !INTERNAL_EVENTS.contains(e.getType()))
-                .map(e -> new TimelineEntry(e.getType(), e.getCreatedAt(), e.getActorId(), staff ? e.getPayload() : sanitise(e.getPayload())))
+        var raw = events.findByClaimIdOrderByCreatedAtAsc(claimId).stream()
+                .filter(e -> staff || !INTERNAL_EVENTS.contains(e.getType())).toList();
+        Map<UUID, AppUser> actors = users.findAllById(raw.stream().map(ClaimEvent::getActorId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(AppUser::getId, u -> u));
+        var timeline = raw.stream().map(e -> staff
+                        ? new TimelineEntry(e.getType(), e.getCreatedAt(), e.getActorId(), nameOf(actors.get(e.getActorId())), e.getPayload())
+                        : new TimelineEntry(e.getType(), e.getCreatedAt(), null, roleLabel(actors.get(e.getActorId()), me.id()), sanitise(e.getPayload())))
                 .toList();
         var infos = infoRequests.findByClaimIdOrderByCreatedAtAsc(claimId).stream()
                 .map(i -> new InfoRequestView(i.getId(), i.getQuestion(), i.getResponse(), i.getStatus().name(),
@@ -80,22 +89,58 @@ public class ClaimQueryService {
         return new ClaimDetailResponse(summaries(List.of(claim), staff).get(0), timeline, infos);
     }
 
-    /** Counts over OPEN claims only. Small scale: loads the slices; at volume this becomes a SQL aggregate. */
+    /**
+     * One SQL aggregate, whatever the volume (was: load every open claim and count in Java). The bucket rules mirror
+     * Sla.assess exactly - BREACHED at the target, DUE_SOON at 75% - and a test runs both over the same claims to keep
+     * them in step. "now" comes from the application clock so the summary and the per-row chips agree.
+     */
     public QueueSummary queueSummary(UUID me, boolean officer) {
-        var open = java.util.EnumSet.of(ClaimStatus.SUBMITTED, ClaimStatus.UNDER_REVIEW, ClaimStatus.PENDING_INFO, ClaimStatus.APPROVED);
-        Specification<Claim> mine = (r, q, cb) -> cb.and(cb.equal(r.get("assigneeId"), me), r.get("status").in(open));
-        Specification<Claim> unassigned = (r, q, cb) -> cb.and(cb.isNull(r.get("assigneeId")), cb.equal(r.get("status"), ClaimStatus.SUBMITTED));
-        return new QueueSummary(officer ? count(claims.findAll(mine)) : new SlaSummary(0, 0, 0, 0), count(claims.findAll(unassigned)));
+        var p = new MapSqlParameterSource()
+                .addValue("me", officer ? me : null)
+                .addValue("now", java.sql.Timestamp.from(sla.now()))
+                .addValue("sub", sla.targetSeconds(ClaimStatus.SUBMITTED))
+                .addValue("rev", sla.targetSeconds(ClaimStatus.UNDER_REVIEW))
+                .addValue("pi", sla.targetSeconds(ClaimStatus.PENDING_INFO))
+                .addValue("ap", sla.targetSeconds(ClaimStatus.APPROVED));
+        var rows = jdbc.query(QUEUE_SUMMARY_SQL, p, (rs, i) -> Map.entry(rs.getString("slice"), new SlaSummary(
+                rs.getLong("breached"), rs.getLong("due_soon"), rs.getLong("on_track"), rs.getLong("chase"))));
+        var bySlice = rows.stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        var empty = new SlaSummary(0, 0, 0, 0);
+        return new QueueSummary(bySlice.getOrDefault("mine", empty), bySlice.getOrDefault("unassigned", empty));
     }
 
-    private SlaSummary count(List<Claim> list) {
-        long b = 0, d = 0, o = 0, chase = 0;
-        for (var c : list) {
-            var state = sla.assess(c).state();
-            if (state == SlaState.BREACHED && c.getStatus() == ClaimStatus.PENDING_INFO) { chase++; continue; }
-            switch (state) { case BREACHED -> b++; case DUE_SOON -> d++; case ON_TRACK -> o++; default -> { } }
-        }
-        return new SlaSummary(b, d, o, chase);
+    private static final String QUEUE_SUMMARY_SQL = """
+            WITH open_claims AS (
+              SELECT status,
+                     CASE WHEN assignee_id = CAST(:me AS uuid) THEN 'mine' ELSE 'unassigned' END AS slice,
+                     sla_started_at,
+                     make_interval(secs => CASE status WHEN 'SUBMITTED' THEN :sub WHEN 'UNDER_REVIEW' THEN :rev
+                                                       WHEN 'PENDING_INFO' THEN :pi ELSE :ap END) AS target
+              FROM claim
+              WHERE (assignee_id = CAST(:me AS uuid) AND status IN ('SUBMITTED','UNDER_REVIEW','PENDING_INFO','APPROVED'))
+                 OR (assignee_id IS NULL AND status = 'SUBMITTED')
+            ), bucketed AS (
+              SELECT slice, status,
+                     CASE WHEN :now >= sla_started_at + target        THEN 'BREACHED'
+                          WHEN :now >= sla_started_at + target * 0.75 THEN 'DUE_SOON'
+                          ELSE 'ON_TRACK' END AS bucket
+              FROM open_claims
+            )
+            SELECT slice,
+                   count(*) FILTER (WHERE bucket = 'BREACHED' AND status <> 'PENDING_INFO') AS breached,
+                   count(*) FILTER (WHERE bucket = 'DUE_SOON')                              AS due_soon,
+                   count(*) FILTER (WHERE bucket = 'ON_TRACK')                              AS on_track,
+                   count(*) FILTER (WHERE bucket = 'BREACHED' AND status = 'PENDING_INFO')  AS chase
+            FROM bucketed GROUP BY slice
+            """;
+
+    private static String nameOf(AppUser u) { return u == null ? null : u.getName(); }
+
+    /** What a claimant may know about who acted: themselves, "a claims officer", or the company. Never an id or name. */
+    private static String roleLabel(AppUser u, UUID claimantId) {
+        if (u == null) return "Lodge";
+        if (u.getId().equals(claimantId)) return "You";
+        return u.getRole() == Role.OFFICER ? "Claims officer" : "Lodge";
     }
 
     private static Map<String, Object> sanitise(Map<String, Object> payload) {
@@ -111,7 +156,8 @@ public class ClaimQueryService {
         return list.stream().map(c -> new ClaimSummary(c.getId(), c.getClaimNumber(), c.getStatus().name(),
                 c.getType().name(), c.getMarket().name(), c.getIncidentDate(), c.getDescription(),
                 showReserve ? c.getReserveAmount() : null, c.getSettledAmount(),
-                c.getCurrency(), c.getAssigneeId(), names.get(c.getAssigneeId()), c.getCreatedAt(), c.getUpdatedAt(),
+                c.getCurrency(), showReserve ? c.getAssigneeId() : null,
+                showReserve ? names.get(c.getAssigneeId()) : (c.getAssigneeId() == null ? null : "A claims officer"), c.getCreatedAt(), c.getUpdatedAt(),
                 c.getVersion(), showReserve ? c.getStatusChangedAt() : null,
                 showReserve ? sla.assess(c).state().name() : null, showReserve ? sla.assess(c).dueAt() : null)).toList();
     }

@@ -167,3 +167,17 @@ Verified: claims 33/33 (incl. backdated-claim SLA, sort, summary, claimant redac
    live windows new keys share one overflow bucket, so memory stays flat and rotation is still throttled. Unit tests
    push 10,000 rotating addresses through a 100-key table.
 Also fixed the e2e row-matching nit while in the file. Verified: claims 38/38, e2e 11/11.
+
+## Three review follow-ups (V6 backfill, claimant redaction, SQL summary) — options chosen by me
+Asked: for each of three review nits I asked for options, then picked: recompute from the timeline, role labels
+instead of ids, one SQL aggregate.
+Found before writing any code: deriving the V8 SQL from the runtime rule exposed a bug in my own SLA-pause fix from
+the day before — on a second info request it ADDED the time since the resumed clock start, which already included the
+first stretch (2 + 1 days became 5). Fixed to assignment; new test runs two request/answer cycles.
+Found by the test, not by review: I asserted the whole claimant response contains no staff id or name (not just the
+timeline field I had changed). It failed — the claim summary also leaked assigneeId/assigneeName. Same fix applied there.
+Lesson: assert on the whole payload when testing redaction.
+Challenged: moving the SLA rule into SQL means two implementations (SQL + Sla.assess). Accepted the duplication for
+O(1) counts, and added a drift test that runs both over the same backdated claims and requires identical numbers. The
+query takes "now" from the application clock so the banner and the per-row chips can't disagree on time.
+Verified: claims 42/42, e2e 11/11.

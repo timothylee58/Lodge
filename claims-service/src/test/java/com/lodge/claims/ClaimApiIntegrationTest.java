@@ -62,6 +62,7 @@ class ClaimApiIntegrationTest {
     @LocalServerPort int port;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired javax.sql.DataSource dataSource;
     @Autowired com.lodge.claims.infrastructure.OutboxCleaner cleaner;
     @SpyBean ObjectMapper json;
 
@@ -521,5 +522,106 @@ class ClaimApiIntegrationTest {
         var after = body(call(get("/api/staff/claims/summary"), priya, null));
         assertThat((int) JsonPath.read(after, "$.mine.chaseClaimant")).isEqualTo(chase0 + 1);
         assertThat((int) JsonPath.read(after, "$.mine.breached")).as("not the officer's delay").isEqualTo(overdue0);
+    }
+
+    static final String WEI_ID = "00000000-0000-0000-0000-000000000002";
+
+    /** Regression: on a SECOND info request the banked review time used to double-count the first stretch. */
+    @Test
+    void reviewTimeIsNotDoubleCountedAcrossSeveralInfoRequests() throws Exception {
+        var aina = login("aina@demo.local");
+        var wei = login("wei@demo.local");
+        var id = submitClaim(aina);
+        var uuid = UUID.fromString(id);
+        call(post(staff(id, "assign")), wei, null);
+        backdate(id, "2 days");                                                  // review stretch 1: 2 days
+        call(post(staff(id, "info-requests")), wei, "{\"question\":\"Q1\"}");
+        call(post("/api/claims/" + id + "/info-responses"), aina, "{\"response\":\"A1\"}");
+        jdbc.update("update claim set sla_started_at = sla_started_at - interval '1 day' where id = ?", uuid); // stretch 2: 1 more day
+        call(post(staff(id, "info-requests")), wei, "{\"question\":\"Q2\"}");
+        assertThat(jdbc.queryForObject("select review_seconds_used from claim where id=?", Long.class, uuid))
+                .as("2 + 1 = 3 days, not 2 + (1 + 2) = 5").isBetween(3 * 86_400L - 60, 3 * 86_400L + 60);
+        call(post("/api/claims/" + id + "/info-responses"), aina, "{\"response\":\"A2\"}");
+        assertThat((String) JsonPath.read(body(call(get("/api/claims/" + id), wei, null)), "$.claim.sla"))
+                .as("3 of 5 days used").isEqualTo("ON_TRACK");
+    }
+
+    /** Regression for a review finding: V6 backfilled from updated_at; V8 must recompute from the timeline. */
+    @Test
+    void v8RecomputesStatusAndSlaTimestampsFromTheTimeline() throws Exception {
+        var id = UUID.fromString(submitClaim(login("aina@demo.local")));
+        jdbc.update("update claim_event set created_at = now() - interval '7 days' where claim_id = ?", id);
+        String ev = "insert into claim_event (id, claim_id, type, actor_id, created_at) values (gen_random_uuid(), ?, ?, '" + WEI_ID + "', now() - cast(? as interval))";
+        jdbc.update(ev, id, "CLAIM_ASSIGNED", "6 days");
+        jdbc.update(ev, id, "INFO_REQUESTED", "5 days");          // 1 day of review banked
+        jdbc.update(ev, id, "INFO_PROVIDED", "2 days");           // review resumed 2 days ago
+        jdbc.update(ev, id, "RESERVE_CHANGED", "1 hour");         // not a status change: must be ignored
+        // What V6/V7 would have left: timestamps taken from the last update, not the last status change.
+        jdbc.update("update claim set status = 'UNDER_REVIEW', assignee_id = '" + WEI_ID + "', status_changed_at = now() - interval '1 hour', "
+                + "sla_started_at = now() - interval '1 hour', review_seconds_used = 0 where id = ?", id);
+
+        new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
+                new org.springframework.core.io.ClassPathResource("db/migration/V8__recompute_sla_timestamps.sql")).execute(dataSource);
+
+        var row = jdbc.queryForMap("select extract(epoch from now() - status_changed_at) as in_status, review_seconds_used, "
+                + "extract(epoch from now() - sla_started_at) as clock from claim where id = ?", id);
+        assertThat(((Number) row.get("in_status")).longValue()).as("entered UNDER_REVIEW 2 days ago").isBetween(2 * 86_400L - 60, 2 * 86_400L + 60);
+        assertThat(((Number) row.get("review_seconds_used")).longValue()).as("1 day banked").isBetween(86_400L - 60, 86_400L + 60);
+        assertThat(((Number) row.get("clock")).longValue()).as("2 + 1 = 3 days of review on the clock").isBetween(3 * 86_400L - 60, 3 * 86_400L + 60);
+    }
+
+    /** Regression for a review finding: claimants received staff user ids in their timeline. */
+    @Test
+    void claimantTimelineShowsRoleLabelsNotStaffIdsOrNames() throws Exception {
+        var aina = login("aina@demo.local");
+        var wei = login("wei@demo.local");
+        var id = submitClaim(aina);
+        call(post(staff(id, "assign")), wei, null);
+        call(post(staff(id, "info-requests")), wei, "{\"question\":\"Photos?\"}");
+
+        var claimant = body(call(get("/api/claims/" + id), aina, null));
+        assertThat(claimant).doesNotContain(WEI_ID).doesNotContain("Wei Officer");
+        assertThat(JsonPath.<List<String>>read(claimant, "$.timeline[*].actor")).containsExactly("You", "Claims officer", "Claims officer");
+        assertThat(JsonPath.<List<Object>>read(claimant, "$.timeline[*].actorId")).containsOnlyNulls();
+
+        var staffView = body(call(get("/api/claims/" + id), wei, null));
+        assertThat(JsonPath.<List<String>>read(staffView, "$.timeline[*].actor")).contains("Aina Claimant", "Wei Officer");
+        assertThat(staffView).contains(WEI_ID);
+    }
+
+    /** Drift guard: the SQL summary and the per-row SLA chips (Sla.assess) must always agree. */
+    @Test
+    void sqlSummaryAgreesWithPerRowSlaStates() throws Exception {
+        var aina = login("aina@demo.local");
+        var priya = login("priya@demo.local");
+        String[] ages = {"1 hour", "20 hours", "3 days"};
+        for (var a : ages) backdate(submitClaim(aina), a);                         // unassigned: on track / due soon / breached
+        for (var a : new String[]{"1 hour", "4 days", "6 days"}) {                 // mine, under review
+            var id = submitClaim(aina); call(post(staff(id, "assign")), priya, null); backdate(id, a);
+        }
+        var chase = submitClaim(aina); call(post(staff(chase, "assign")), priya, null);
+        call(post(staff(chase, "info-requests")), priya, "{\"question\":\"Q\"}"); backdate(chase, "8 days");
+
+        var summary = body(call(get("/api/staff/claims/summary"), priya, null));
+        for (var slice : List.of("mine", "unassigned")) {
+            var q = slice.equals("mine") ? "assignee=me" : "assignee=unassigned&status=SUBMITTED";
+            var rows = body(call(get("/api/staff/claims?size=100&" + q), priya, null));
+            List<String> slas = JsonPath.read(rows, "$.content[*].sla");
+            List<String> statuses = JsonPath.read(rows, "$.content[*].status");
+            long breached = 0, dueSoon = 0, onTrack = 0, chaseN = 0;
+            for (int i = 0; i < slas.size(); i++) {
+                switch (slas.get(i)) {
+                    case "BREACHED" -> { if ("PENDING_INFO".equals(statuses.get(i))) chaseN++; else breached++; }
+                    case "DUE_SOON" -> dueSoon++;
+                    case "ON_TRACK" -> onTrack++;
+                    default -> { }
+                }
+            }
+            assertThat(List.of(((Number) JsonPath.read(summary, "$." + slice + ".breached")).longValue(),
+                            ((Number) JsonPath.read(summary, "$." + slice + ".dueSoon")).longValue(),
+                            ((Number) JsonPath.read(summary, "$." + slice + ".onTrack")).longValue(),
+                            ((Number) JsonPath.read(summary, "$." + slice + ".chaseClaimant")).longValue()))
+                    .as(slice).containsExactly(breached, dueSoon, onTrack, chaseN);
+        }
     }
 }

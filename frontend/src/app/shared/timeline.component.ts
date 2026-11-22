@@ -10,6 +10,7 @@ import { EVENT_LABEL, money, when } from './format';
       @for (e of entries(); track $index) {
         <li class="relative pb-4 pl-4 before:absolute before:-left-[6px] before:top-2 before:h-2.5 before:w-2.5 before:rounded-full before:bg-blue-600 before:content-['']">
           <div class="flex flex-wrap justify-between gap-2"><strong>{{ label(e.type) }}</strong><time class="text-sm text-slate-500">{{ when(e.at) }}</time></div>
+          @if (e.actor) { <p class="m-0 text-xs text-slate-500">by {{ e.actor }}</p> }
           @if (text(e); as t) { <p class="m-0 mt-0.5 text-slate-500 dark:text-slate-400">{{ t }}</p> }
         </li>
       } @empty { <li class="text-slate-500">No activity yet.</li> }

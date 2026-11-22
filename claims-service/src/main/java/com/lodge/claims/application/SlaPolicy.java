@@ -36,4 +36,6 @@ public class SlaPolicy {
     public Sla assess(Claim c) { return Sla.assess(targets.get(c.getStatus()), c.getSlaStartedAt(), now()); }
 
     public Instant now() { return clock.instant(); }
+
+    public long targetSeconds(ClaimStatus status) { return targets.get(status).toSeconds(); }
 }

@@ -20,7 +20,8 @@ export interface ClaimSummary {
   statusChangedAt: string | null; sla: SlaState | null; slaDueAt: string | null;
 }
 
-export interface TimelineEntry { type: string; at: string; actorId: string; detail: Record<string, unknown>; }
+/** actor: a name for staff, a role label ("You", "Claims officer", "Lodge") for claimants; actorId is staff-only. */
+export interface TimelineEntry { type: string; at: string; actorId: string | null; actor: string | null; detail: Record<string, unknown>; }
 export interface InfoRequestView {
   id: string; question: string; response: string | null; status: 'OPEN' | 'ANSWERED'; createdAt: string; answeredAt: string | null;
 }

@@ -99,7 +99,8 @@ public class Claim {
         var now = Instant.now();
         if (status == ClaimStatus.UNDER_REVIEW && next == ClaimStatus.PENDING_INFO) {
             // Bank the review time used so far; the claimant's wait must not count against the officer...
-            reviewSecondsUsed += java.time.Duration.between(slaStartedAt, now).toSeconds();
+            // Assign, don't add: after a resume, slaStartedAt already includes earlier review time.
+            reviewSecondsUsed = java.time.Duration.between(slaStartedAt, now).toSeconds();
             slaStartedAt = now;
         } else if (status == ClaimStatus.PENDING_INFO && next == ClaimStatus.UNDER_REVIEW) {
             // ...and answering must not hand the officer a fresh 5 days either: resume the review clock.

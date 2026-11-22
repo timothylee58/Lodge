@@ -105,11 +105,14 @@ export class QueueComponent {
   label = STATUS_LABEL;
   money = money; when = when; age = age;
 
-  constructor() { this.load(0); }
+  constructor() { this.load(0); this.loadSummary(); }
 
-  sortBy(s: 'oldest' | 'waiting') { this.sort.set(s); this.load(0); }
+  /** Only on entering the queue and when the tab or sort changes — not on every page click. */
+  loadSummary() { this.api.queueSummary().subscribe({ next: s => this.summary.set(s), error: () => this.summary.set(null) }); }
 
-  select(t: Tab) { this.tab.set(t); this.status = ''; this.load(0); }
+  sortBy(s: 'oldest' | 'waiting') { this.sort.set(s); this.load(0); this.loadSummary(); }
+
+  select(t: Tab) { this.tab.set(t); this.status = ''; this.load(0); this.loadSummary(); }
 
   load(pageNo: number) {
     const t = this.tab();
@@ -119,7 +122,6 @@ export class QueueComponent {
       assignee: t === 'unassigned' ? 'unassigned' : t === 'me' ? 'me' : undefined,
       page: pageNo, size: 20, sort: this.sort(),
     }).subscribe({ next: p => this.page.set(p), error: e => this.error.set(problem(e)) });
-    this.api.queueSummary().subscribe({ next: s => this.summary.set(s), error: () => this.summary.set(null) });
   }
 
   pickUp(c: ClaimSummary) {
