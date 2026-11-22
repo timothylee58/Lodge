@@ -154,3 +154,16 @@ matched; then my own sed put a comment in front of `.click()`, silently commenti
 line back instead of trusting the edit.
 Known limit: the summary loads the open slices and counts in Java; at volume it becomes a SQL aggregate.
 Verified: claims 33/33 (incl. backdated-claim SLA, sort, summary, claimant redaction), e2e 11/11, and a browser check.
+
+## Fixing the three important review findings (SLA + rate limiter)
+1. Decision SLA reset after each info request (an officer could stay "on track" forever by asking a question before
+   the deadline). Kept `status_changed_at` honest for display, and added a separate SLA clock: review time is banked
+   when the claim goes to the claimant and the clock resumes from it on the answer (V7, `Claim.transitionTo`).
+   Regression test backdates 4 review days, waits 3 "claimant days", answers: due soon with ~1 day left, not fresh.
+2. Banner counted claimant-side breaches as the officer's "overdue". Added `chaseClaimant` to the summary; the banner
+   shows it separately in amber. Test asserts the officer's overdue count does not move.
+3. Rate-limiter memory. Rejected "clear the map when full" (resets every attacker's window) and "reject new IPs"
+   (locks out legitimate users). Overrode: key IPv6 by /64 (one host owns its whole /64), and once the table is full of
+   live windows new keys share one overflow bucket, so memory stays flat and rotation is still throttled. Unit tests
+   push 10,000 rotating addresses through a 100-key table.
+Also fixed the e2e row-matching nit while in the file. Verified: claims 38/38, e2e 11/11.

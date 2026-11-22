@@ -13,7 +13,7 @@ import java.util.Map;
 
 /**
  * Service-level targets per status (time allowed IN that status). Server-side so the UI, reports and any future
- * alert agree on one answer and one clock. PENDING_INFO measures the claimant's response time: a breach there means
+ * alert agree on one answer and one clock. The decision clock pauses while waiting on the claimant (see Claim). PENDING_INFO measures the claimant's response time: a breach there means
  * "chase the claimant", not "the officer is late".
  */
 @Component
@@ -33,7 +33,7 @@ public class SlaPolicy {
         targets.put(ClaimStatus.APPROVED, Duration.ofHours(approved));
     }
 
-    public Sla assess(Claim c) { return Sla.assess(targets.get(c.getStatus()), c.getStatusChangedAt(), now()); }
+    public Sla assess(Claim c) { return Sla.assess(targets.get(c.getStatus()), c.getSlaStartedAt(), now()); }
 
     public Instant now() { return clock.instant(); }
 }

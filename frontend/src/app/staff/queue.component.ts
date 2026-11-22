@@ -29,7 +29,8 @@ type Tab = 'unassigned' | 'me' | 'all';
         @if (isOfficer()) {
           <span class="rounded-lg border border-slate-300 px-3 py-1.5 dark:border-slate-700">My open claims:
             <strong [class.text-red-700]="sm.mine.breached > 0" [class.dark:text-red-300]="sm.mine.breached > 0">{{ sm.mine.breached }} overdue</strong> ·
-            {{ sm.mine.dueSoon }} due soon · {{ sm.mine.onTrack }} on track</span>
+            {{ sm.mine.dueSoon }} due soon · {{ sm.mine.onTrack }} on track
+            @if (sm.mine.chaseClaimant > 0) { · <span class="text-amber-700 dark:text-amber-300">{{ sm.mine.chaseClaimant }} to chase with the claimant</span> }</span>
         }
         <span class="rounded-lg border border-slate-300 px-3 py-1.5 dark:border-slate-700">Waiting for an officer:
           <strong [class.text-red-700]="sm.unassigned.breached > 0" [class.dark:text-red-300]="sm.unassigned.breached > 0">{{ sm.unassigned.breached }} overdue</strong> ·

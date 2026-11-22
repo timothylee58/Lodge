@@ -11,7 +11,8 @@ test('officer queue shows claim age, SLA state and an overdue summary, and can s
   await page.getByRole('radio', { name: 'Longest waiting' }).click();
   await expect(page.getByText('Longest in current status first.')).toBeVisible();
 
-  const row = page.getByRole('row').filter({ hasText: claim.number });
+  // exact link match: a substring filter would also match CLM-10010 for CLM-1001 (review nit)
+  const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: claim.number, exact: true }) });
   await expect(row).toBeVisible();
   await expect(row.getByText('On track')).toBeVisible();
   await expect(row.getByText(/in status \d+m/)).toBeVisible();

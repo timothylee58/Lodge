@@ -1,7 +1,8 @@
 // Mirrors the backend DTOs (claims-service + reporting-service). Next step: generate from the OpenAPI spec.
 export type Role = 'CLAIMANT' | 'OFFICER' | 'MANAGER';
 export type SlaState = 'ON_TRACK' | 'DUE_SOON' | 'BREACHED' | 'NONE';
-export interface SlaCounts { breached: number; dueSoon: number; onTrack: number; }
+/** breached = staff delays; chaseClaimant = past the claimant's response target (not the officer's delay). */
+export interface SlaCounts { breached: number; dueSoon: number; onTrack: number; chaseClaimant: number; }
 export interface QueueSummary { mine: SlaCounts; unassigned: SlaCounts; }
 export type ClaimStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'PENDING_INFO' | 'APPROVED' | 'SETTLED' | 'REJECTED';
 

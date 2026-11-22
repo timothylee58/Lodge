@@ -442,8 +442,8 @@ class ClaimApiIntegrationTest {
     // ---------- claim age and SLA ----------
 
     void backdate(String claimId, String interval) {
-        jdbc.update("update claim set status_changed_at = now() - cast(? as interval), created_at = now() - cast(? as interval) where id = ?",
-                interval, interval, UUID.fromString(claimId));
+        jdbc.update("update claim set status_changed_at = now() - cast(? as interval), sla_started_at = now() - cast(? as interval), "
+                + "created_at = now() - cast(? as interval) where id = ?", interval, interval, interval, UUID.fromString(claimId));
     }
 
     @Test
@@ -482,5 +482,44 @@ class ClaimApiIntegrationTest {
         var mark = login("mark@demo.local");
         assertThat((int) JsonPath.read(body(call(get("/api/staff/claims/summary"), mark, null)), "$.mine.onTrack")).isZero();
         assertThat(status(call(get("/api/staff/claims/summary"), aina, null))).isEqualTo(403);
+    }
+
+    /** Regression for a review finding: answering an info request used to give the officer a fresh 5 days. */
+    @Test
+    void decisionClockPausesWhileWaitingOnTheClaimantAndResumesInsteadOfRestarting() throws Exception {
+        var aina = login("aina@demo.local");
+        var wei = login("wei@demo.local");
+        var id = submitClaim(aina);
+        assertThat(status(call(post(staff(id, "assign")), wei, null))).isEqualTo(200);
+        backdate(id, "4 days");                                            // 4 of the 5 review days already used
+        assertThat(status(call(post(staff(id, "info-requests")), wei, "{\"question\":\"Photos?\"}"))).isEqualTo(200);
+        assertThat(jdbc.queryForObject("select review_seconds_used from claim where id=?", Long.class, UUID.fromString(id)))
+                .isBetween(4 * 86_400L - 60, 4 * 86_400L + 60);
+        backdate(id, "3 days");                                            // claimant takes 3 days to answer
+        assertThat(status(call(post("/api/claims/" + id + "/info-responses"), aina, "{\"response\":\"Attached\"}"))).isEqualTo(200);
+
+        var view = body(call(get("/api/claims/" + id), wei, null));
+        assertThat((String) JsonPath.read(view, "$.claim.sla")).as("4/5 days used: due soon, not a fresh on-track").isEqualTo("DUE_SOON");
+        var due = java.time.Instant.parse(JsonPath.read(view, "$.claim.slaDueAt"));
+        assertThat(java.time.Duration.between(java.time.Instant.now(), due).toHours()).as("about 1 day left").isBetween(22L, 25L);
+    }
+
+    /** Regression for a review finding: claimant-side breaches were counted as the officer's "overdue". */
+    @Test
+    void claimantSideBreachesAreCountedAsChaseClaimantNotOverdue() throws Exception {
+        var aina = login("aina@demo.local");
+        var priya = login("priya@demo.local");
+        var before = body(call(get("/api/staff/claims/summary"), priya, null));
+        int overdue0 = JsonPath.read(before, "$.mine.breached");
+        int chase0 = JsonPath.read(before, "$.mine.chaseClaimant");
+
+        var id = submitClaim(aina);
+        call(post(staff(id, "assign")), priya, null);
+        call(post(staff(id, "info-requests")), priya, "{\"question\":\"Receipt?\"}");
+        backdate(id, "8 days");                                            // past the 7-day claimant target
+
+        var after = body(call(get("/api/staff/claims/summary"), priya, null));
+        assertThat((int) JsonPath.read(after, "$.mine.chaseClaimant")).isEqualTo(chase0 + 1);
+        assertThat((int) JsonPath.read(after, "$.mine.breached")).as("not the officer's delay").isEqualTo(overdue0);
     }
 }

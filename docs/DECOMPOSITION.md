@@ -119,7 +119,8 @@ Next step: server-sent events instead of polling.
 
 - **Claim age and SLA** (added): each claim shows its age and time in the current status, and an SLA chip against a
   per-status target (pick up 24 h, decide 5 d, claimant answers 7 d, settle 3 d; configurable under `lodge.sla.*`).
-  While waiting on the claimant a breach reads "Chase claimant", not "Overdue". The queue sorts by longest waiting and
+  While waiting on the claimant a breach reads "Chase claimant", not "Overdue", and is counted separately. The
+  5-day decision clock pauses while the claim waits on the claimant and resumes (not restarts) when they answer. The queue sorts by longest waiting and
   shows overdue / due-soon counts for "my claims" and "waiting for an officer" (`GET /api/staff/claims/summary`).
   SLA is computed server-side (`SlaPolicy`) so every screen and any future alert use one clock and one answer.
 

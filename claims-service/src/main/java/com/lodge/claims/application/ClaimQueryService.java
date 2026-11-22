@@ -85,15 +85,17 @@ public class ClaimQueryService {
         var open = java.util.EnumSet.of(ClaimStatus.SUBMITTED, ClaimStatus.UNDER_REVIEW, ClaimStatus.PENDING_INFO, ClaimStatus.APPROVED);
         Specification<Claim> mine = (r, q, cb) -> cb.and(cb.equal(r.get("assigneeId"), me), r.get("status").in(open));
         Specification<Claim> unassigned = (r, q, cb) -> cb.and(cb.isNull(r.get("assigneeId")), cb.equal(r.get("status"), ClaimStatus.SUBMITTED));
-        return new QueueSummary(officer ? count(claims.findAll(mine)) : new SlaSummary(0, 0, 0), count(claims.findAll(unassigned)));
+        return new QueueSummary(officer ? count(claims.findAll(mine)) : new SlaSummary(0, 0, 0, 0), count(claims.findAll(unassigned)));
     }
 
     private SlaSummary count(List<Claim> list) {
-        long b = 0, d = 0, o = 0;
+        long b = 0, d = 0, o = 0, chase = 0;
         for (var c : list) {
-            switch (sla.assess(c).state()) { case BREACHED -> b++; case DUE_SOON -> d++; case ON_TRACK -> o++; default -> { } }
+            var state = sla.assess(c).state();
+            if (state == SlaState.BREACHED && c.getStatus() == ClaimStatus.PENDING_INFO) { chase++; continue; }
+            switch (state) { case BREACHED -> b++; case DUE_SOON -> d++; case ON_TRACK -> o++; default -> { } }
         }
-        return new SlaSummary(b, d, o);
+        return new SlaSummary(b, d, o, chase);
     }
 
     private static Map<String, Object> sanitise(Map<String, Object> payload) {

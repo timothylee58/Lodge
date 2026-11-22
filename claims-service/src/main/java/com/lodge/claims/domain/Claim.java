@@ -32,6 +32,10 @@ public class Claim {
     private Instant createdAt;
     private Instant updatedAt;
     private Instant statusChangedAt;
+    /** Start of the SLA clock for the current status; differs from statusChangedAt when a review resumes. */
+    private Instant slaStartedAt;
+    /** Officer review time already used before the claim went to the claimant for information. */
+    private long reviewSecondsUsed;
 
     protected Claim() {}
 
@@ -48,7 +52,7 @@ public class Claim {
         c.description = description;
         c.currency = currency;
         c.status = ClaimStatus.SUBMITTED;
-        c.createdAt = c.updatedAt = c.statusChangedAt = Instant.now();
+        c.createdAt = c.updatedAt = c.statusChangedAt = c.slaStartedAt = Instant.now();
         return c;
     }
 
@@ -92,8 +96,19 @@ public class Claim {
 
     private void transitionTo(ClaimStatus next) {
         if (!status.allowedNext().contains(next)) throw new InvalidTransitionException(status, next);
+        var now = Instant.now();
+        if (status == ClaimStatus.UNDER_REVIEW && next == ClaimStatus.PENDING_INFO) {
+            // Bank the review time used so far; the claimant's wait must not count against the officer...
+            reviewSecondsUsed += java.time.Duration.between(slaStartedAt, now).toSeconds();
+            slaStartedAt = now;
+        } else if (status == ClaimStatus.PENDING_INFO && next == ClaimStatus.UNDER_REVIEW) {
+            // ...and answering must not hand the officer a fresh 5 days either: resume the review clock.
+            slaStartedAt = now.minusSeconds(reviewSecondsUsed);
+        } else {
+            slaStartedAt = now;
+        }
         this.status = next;
-        this.updatedAt = this.statusChangedAt = Instant.now();
+        this.updatedAt = this.statusChangedAt = now;
     }
 
     private static void requireNonNegative(BigDecimal v) {
@@ -117,4 +132,5 @@ public class Claim {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getStatusChangedAt() { return statusChangedAt; }
+    public Instant getSlaStartedAt() { return slaStartedAt; }
 }
