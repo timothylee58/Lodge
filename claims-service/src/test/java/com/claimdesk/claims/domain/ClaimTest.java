@@ -38,7 +38,7 @@ class ClaimTest {
         c.assignTo(officer);
         c.approve(BigDecimal.TEN);
         assertThatThrownBy(() -> c.settle(new BigDecimal("60000"), new BigDecimal("50000")))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(InvalidRequestException.class);
     }
 
     @Test
@@ -54,5 +54,15 @@ class ClaimTest {
     void terminalStatesAllowNothing() {
         assertThat(ClaimStatus.SETTLED.allowedNext()).isEmpty();
         assertThat(ClaimStatus.REJECTED.allowedNext()).isEmpty();
+    }
+
+    @Test
+    void todayIsPerMarketNotServerUtc() {
+        // 20:00 UTC on 22 Nov = already 23 Nov in KL (04:00) and Sydney (07:00).
+        var clock = java.time.Clock.fixed(java.time.Instant.parse("2026-11-22T20:00:00Z"), java.time.ZoneOffset.UTC);
+        assertThat(Market.MY.today(clock)).isEqualTo(LocalDate.of(2026, 11, 23));
+        assertThat(Market.AU.today(clock)).isEqualTo(LocalDate.of(2026, 11, 23));
+        assertThat(Market.TH.today(clock)).isEqualTo(LocalDate.of(2026, 11, 23)); // 03:00 Bangkok
+        assertThat(LocalDate.now(clock)).isEqualTo(LocalDate.of(2026, 11, 22)); // what the old check compared against
     }
 }

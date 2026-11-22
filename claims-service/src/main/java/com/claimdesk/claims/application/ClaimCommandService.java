@@ -33,11 +33,13 @@ public class ClaimCommandService {
     private final EntityManager em;
     private final ObjectMapper json;
     private final String topic;
+    private final java.time.Clock clock;
 
     public ClaimCommandService(ClaimRepository claims, OutboxRepository outbox, ClaimEventRepository events,
                                InfoRequestRepository infoRequests, PolicyRepository policies, UserRepository users,
                                EntityManager em, ObjectMapper json,
-                               @Value("${claimdesk.outbox.topic}") String topic) {
+                               @Value("${claimdesk.outbox.topic}") String topic, java.time.Clock clock) {
+        this.clock = clock;
         this.claims = claims; this.outbox = outbox; this.events = events; this.infoRequests = infoRequests;
         this.policies = policies; this.users = users; this.em = em; this.json = json; this.topic = topic;
     }
@@ -48,8 +50,10 @@ public class ClaimCommandService {
         var policy = policies.findById(policyId)
                 .filter(p -> p.getHolderId().equals(claimantId))
                 .orElseThrow(() -> new EntityNotFoundException("Policy " + policyId));
-        if (!policy.isActive()) throw new IllegalArgumentException("Policy is not active");
-        if (incidentDate.isAfter(LocalDate.now())) throw new IllegalArgumentException("Incident date is in the future");
+        if (!policy.isActive()) throw new InvalidRequestException("Policy is not active");
+        // "Future" in the policy's market, not on the server's UTC clock (MY/SG/AU are ahead of UTC).
+        if (incidentDate.isAfter(policy.getMarket().today(clock)))
+            throw new InvalidRequestException("Incident date is in the future");
 
         var number = "CLM-" + em.createNativeQuery("select nextval('claim_number_seq')").getSingleResult();
         var claim = claims.saveAndFlush(Claim.submit(number, policy.getId(), claimantId, policy.getType(),
@@ -138,7 +142,7 @@ public class ClaimCommandService {
     private void requireWithinLimit(Claim c, BigDecimal amount, String what) {
         var limit = policies.findById(c.getPolicyId()).orElseThrow().getCoverageLimit();
         if (amount != null && amount.compareTo(limit) > 0)
-            throw new IllegalArgumentException(what + " exceeds policy coverage limit");
+            throw new InvalidRequestException(what + " exceeds policy coverage limit");
     }
 
     private void flushAndRecord(Claim c, String type, UUID actor, Map<String, Object> extra) {

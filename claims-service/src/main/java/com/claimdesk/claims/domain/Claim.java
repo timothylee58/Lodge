@@ -73,7 +73,7 @@ public class Claim {
     public void settle(BigDecimal amount, BigDecimal coverageLimit) {
         requireNonNegative(amount);
         if (amount.compareTo(coverageLimit) > 0) {
-            throw new IllegalArgumentException("Settlement exceeds policy coverage limit");
+            throw new InvalidRequestException("Settlement exceeds policy coverage limit");
         }
         transitionTo(ClaimStatus.SETTLED);
         this.settledAmount = amount;
@@ -96,7 +96,7 @@ public class Claim {
     }
 
     private static void requireNonNegative(BigDecimal v) {
-        if (v == null || v.signum() < 0) throw new IllegalArgumentException("Amount must be >= 0");
+        if (v == null || v.signum() < 0) throw new InvalidRequestException("Amount must be >= 0");
     }
 
     public UUID getId() { return id; }

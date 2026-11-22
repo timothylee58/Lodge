@@ -49,7 +49,9 @@ public class ClaimQueryService {
         if ("unassigned".equalsIgnoreCase(assignee)) spec = spec.and((r, q, cb) -> cb.isNull(r.get("assigneeId")));
         else if ("me".equalsIgnoreCase(assignee)) spec = spec.and((r, q, cb) -> cb.equal(r.get("assigneeId"), me));
         else if (assignee != null && !assignee.isBlank()) {
-            var id = UUID.fromString(assignee); // bad value -> IllegalArgumentException -> 400
+            UUID id;
+            try { id = UUID.fromString(assignee); }
+            catch (IllegalArgumentException e) { throw new InvalidRequestException("assignee must be me, unassigned or a user id"); }
             spec = spec.and((r, q, cb) -> cb.equal(r.get("assigneeId"), id));
         }
         var result = claims.findAll(spec, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),

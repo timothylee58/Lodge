@@ -76,3 +76,11 @@ a 300-char Kafka key stalled its partition with 0 dead letters). Each fix has a 
 My mistakes: a script assertion counted a phrase I'd just put in a comment so the seed rewrite silently didn't happen;
 a regression test used an email with no "i". Both caught before commit.
 Left (medium): blanket IllegalArgumentException -> 400; UTC "future incident date" check.
+
+## Medium review findings
+1. Blanket IllegalArgumentException -> 400 replaced by InvalidRequestException for business rules; any other
+   IllegalArgumentException is now a 500 with no internal message. Bad `assignee` returns a clear 400 instead of
+   echoing "Invalid UUID string". Same reasoning as the earlier IllegalStateException fix, which I had only half-applied.
+2. "Future incident date" was judged on the server's UTC clock, so a claim reported at 04:00 in KL for an incident that
+   day was rejected. Market now carries its time zone and the check uses the policy market's "today" (injected Clock).
+   Removed @PastOrPresent from the DTO, since it used the same server clock.

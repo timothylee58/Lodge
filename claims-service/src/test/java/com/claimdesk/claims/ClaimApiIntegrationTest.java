@@ -424,4 +424,18 @@ class ClaimApiIntegrationTest {
         assertThat(status(tryLogin("aina@demo.local", "x".repeat(129), "10.4.4.5"))).as("oversized password").isEqualTo(400);
         assertThat(status(tryLogin("AINA@Demo.Local", "password", "10.4.4.5"))).as("case-insensitive login still works").isEqualTo(200);
     }
+
+    @Test
+    void incidentDateIsJudgedInTheMarketsTimezoneAndBugsAreNot400s() throws Exception {
+        var aina = login("aina@demo.local");
+        var myToday = com.claimdesk.claims.domain.Market.MY.today(java.time.Clock.systemUTC());
+        var body = "{\"policyId\":\"%s\",\"incidentDate\":\"%s\",\"description\":\"x\"}";
+        assertThat(status(call(post("/api/claims"), aina, body.formatted(MOTOR_POLICY, myToday)))).as("today in KL").isEqualTo(201);
+        var future = call(post("/api/claims"), aina, body.formatted(MOTOR_POLICY, myToday.plusDays(1)));
+        assertThat(status(future)).isEqualTo(400);
+        assertThat(body(future)).contains("Incident date is in the future");
+        var badAssignee = call(get("/api/staff/claims?assignee=not-a-uuid"), login("wei@demo.local"), null);
+        assertThat(status(badAssignee)).isEqualTo(400);
+        assertThat(body(badAssignee)).contains("assignee must be").doesNotContain("Invalid UUID string");
+    }
 }

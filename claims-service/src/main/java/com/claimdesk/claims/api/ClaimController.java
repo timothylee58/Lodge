@@ -38,7 +38,7 @@ public class ClaimController {
     @GetMapping("/claims")
     public List<ClaimSummary> mine(@AuthenticationPrincipal AuthenticatedUser me,
                                    @RequestParam(defaultValue = "true") boolean mine) {
-        if (!mine) throw new IllegalArgumentException("Only mine=true is supported for claimants");
+        if (!mine) throw new com.claimdesk.claims.domain.InvalidRequestException("Only mine=true is supported for claimants");
         return queries.mine(me.id());
     }
 

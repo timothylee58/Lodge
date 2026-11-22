@@ -62,8 +62,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .header("Retry-After", String.valueOf(e.retryAfterSeconds())).body(pd);
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    ProblemDetail badRequest(IllegalArgumentException e) {
+    @ExceptionHandler(com.claimdesk.claims.domain.InvalidRequestException.class)
+    ProblemDetail badRequest(com.claimdesk.claims.domain.InvalidRequestException e) {
         return problem(HttpStatus.BAD_REQUEST, "Invalid request", e.getMessage());
     }
 

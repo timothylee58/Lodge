@@ -52,6 +52,10 @@ MANAGER. Role gates are URL-level; ownership ("my claim", "assigned to me") is e
 `X-Forwarded-For` is used only from configured trusted proxies. Demo accounts exist only in `db/demo-seed` (dev/tests).
 Production path: OIDC (Keycloak / Azure AD) with JWKS instead of a shared secret: `docs/adr/0002-token-signing-and-oidc-path.md`.
 
+## Dates and errors
+Incident dates are validated against "today" in the policy market's time zone. Business-rule violations are
+`InvalidRequestException` (400); unexpected exceptions are generic 500s.
+
 ## Known gaps (deliberate)
 - Exposure is per market and currency with per-currency totals; **no FX conversion** (never sums across currencies).
 - Workload lists officers once they have been assigned a claim (roster learned from events); a brand-new officer with
