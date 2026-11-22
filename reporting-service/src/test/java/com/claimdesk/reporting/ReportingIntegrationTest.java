@@ -277,4 +277,19 @@ class ReportingIntegrationTest {
         assertThat(processed(old)).isFalse();
         assertThat(processed(fresh)).isTrue();
     }
+
+    /** Regression for a review finding: an over-long key used to make the recorder's INSERT fail forever. */
+    @Test
+    void poisonWithHugeKeyOrNulCharactersCannotWedgeThePartition() {
+        var hugeKey = "k".repeat(300) + UUID.randomUUID();
+        var claim = UUID.randomUUID(); var good = UUID.randomUUID();
+        producer.send(TOPIC, hugeKey, "not json at all");
+        producer.send(TOPIC, hugeKey, "{\"eventId\":\"nul\u0000inside\"}");
+        producer.send(TOPIC, hugeKey, event(good, claim, 1, "APPROVED", "CA", "CAD", "42", null, null)); // same key => same partition
+
+        await().atMost(Duration.ofSeconds(30)).until(() -> processed(good));
+        assertThat(jdbc.queryForObject("select count(*) from dead_letter where msg_key = ?", Integer.class, hugeKey)).isEqualTo(2);
+        List<String> payloads = jdbc.queryForList("select payload from dead_letter where msg_key = ?", String.class, hugeKey);
+        assertThat(payloads).anyMatch(p -> p.contains("nul\uFFFDinside")); // NUL replaced, message kept
+    }
 }
