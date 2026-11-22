@@ -2,6 +2,7 @@
 
 Claims intake and handling: claimants report incidents and track them, officers work a queue, managers see exposure.
 Backend-first; see `docs/adr/0001-modular-monolith-plus-reporting.md` and `docs/AI_JOURNAL.md`.
+How the AI was directed, challenged and overridden (with evidence): `docs/DIRECTION_LOG.md`.
 
 ## Run locally
 
@@ -52,9 +53,10 @@ and `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=<regex of your proxy IPs>`, and hav
 (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Otherwise every user shares one login rate-limit
 bucket. Leave it off without a proxy: `X-Forwarded-For` is client-controlled.
 
-## Frontend (Angular 18)
+## Frontend (Angular 18 + Angular Material + Tailwind)
 
-Served by nginx at http://localhost:4200, which also proxies `/api/**` to the two services (one origin, no CORS).
+Material for components, Tailwind for layout (preflight off; see journal block 5b). Served by nginx at
+http://localhost:4200, which also proxies `/api/**` to the two services (one origin, no CORS).
 Sign in with a demo account: claimant `aina@`, officers `wei@` / `priya@`, manager `mark@` (all `@demo.local`,
 password `password`). For live reload against IDE-run services: `cd frontend && npm install && npm start`
 (port 4200, proxies via `proxy.conf.json`).

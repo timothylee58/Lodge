@@ -1,0 +1,33 @@
+@use '@angular/material' as mat;
+
+// Material first, Tailwind utilities last so a utility class can override a component default.
+@include mat.core();
+
+// System font: the CSP (default-src 'self') blocks Google Fonts, so no Roboto download.
+$font: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+$light: mat.define-theme((
+  color: (theme-type: light, primary: mat.$azure-palette),
+  typography: (brand-family: $font, plain-family: $font),
+  density: (scale: -1),
+));
+$dark: mat.define-theme((color: (theme-type: dark, primary: mat.$azure-palette)));
+
+html {
+  color-scheme: light dark;
+  @include mat.all-component-themes($light);
+  @media (prefers-color-scheme: dark) { @include mat.all-component-colors($dark); }
+}
+
+// Preflight is off (it breaks Material), but Tailwind's border utilities set only border-width and rely on
+// preflight's "border-style: solid" default. Restore that rule ONLY on elements using a Tailwind border class.
+// Not globally: MDC's notched outline leaves the notch's left/right border-style at the default "none" to hide them,
+// and a global "solid" made those hidden sides appear. :where() keeps specificity at zero.
+:where([class*="border"]) { border-width: 0; border-style: solid; }
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }
+h1, h2 { margin: 0; }
+.mat-mdc-form-field { width: 100%; }

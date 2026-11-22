@@ -9,117 +9,109 @@ import { ClaimDetail } from '../core/models';
 import { StatusBadgeComponent } from '../shared/status-badge.component';
 import { TimelineComponent } from '../shared/timeline.component';
 import { money, problem, when } from '../shared/format';
+import { MATERIAL } from '../shared/material';
 
 type Action = 'info' | 'approve' | 'reject' | 'settle' | 'reserve' | null;
 
 @Component({
   selector: 'cd-workbench',
   standalone: true,
-  imports: [FormsModule, RouterLink, StatusBadgeComponent, TimelineComponent],
+  imports: [FormsModule, RouterLink, StatusBadgeComponent, TimelineComponent, ...MATERIAL],
   template: `
-    <a class="back" routerLink="/queue">← Queue</a>
+    <a class="text-sm no-underline" routerLink="/queue">← Queue</a>
     @if (detail(); as d) {
-      <div class="page-head">
-        <h1>{{ d.claim.claimNumber }} <span class="muted">· {{ d.claim.market }} {{ d.claim.type }}</span></h1>
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <h1 class="text-2xl">{{ d.claim.claimNumber }} <span class="text-slate-500">· {{ d.claim.market }} {{ d.claim.type }}</span></h1>
         <cd-status [status]="d.claim.status" />
       </div>
+      @if (busy()) { <mat-progress-bar mode="indeterminate" /> }
 
-      <div class="grid-2">
-        <div>
-          <section class="card">
-            <h2>Claim</h2>
-            <dl>
-              <dt>Incident date</dt><dd>{{ d.claim.incidentDate }}</dd>
-              <dt>Officer</dt><dd>{{ d.claim.assigneeName ?? 'Unassigned' }}</dd>
-              <dt>Reserve</dt><dd>{{ money(d.claim.reserveAmount, d.claim.currency) }}</dd>
-              @if (d.claim.settledAmount != null) { <dt>Settled</dt><dd>{{ money(d.claim.settledAmount, d.claim.currency) }}</dd> }
-              <dt>Reported</dt><dd>{{ when(d.claim.createdAt) }}</dd>
+      <div class="grid items-start gap-4 md:grid-cols-2">
+        <div class="flex flex-col gap-4">
+          <mat-card appearance="outlined" class="p-4">
+            <h2 class="mb-3 text-lg">Claim</h2>
+            <dl class="m-0 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+              <dt class="text-slate-500">Incident date</dt><dd class="m-0">{{ d.claim.incidentDate }}</dd>
+              <dt class="text-slate-500">Officer</dt><dd class="m-0">{{ d.claim.assigneeName ?? 'Unassigned' }}</dd>
+              <dt class="text-slate-500">Reserve</dt><dd class="m-0 tabular-nums">{{ money(d.claim.reserveAmount, d.claim.currency) }}</dd>
+              @if (d.claim.settledAmount != null) { <dt class="text-slate-500">Settled</dt><dd class="m-0 tabular-nums">{{ money(d.claim.settledAmount, d.claim.currency) }}</dd> }
+              <dt class="text-slate-500">Reported</dt><dd class="m-0">{{ when(d.claim.createdAt) }}</dd>
             </dl>
-            <p class="pre">{{ d.claim.description }}</p>
-          </section>
+            <p class="whitespace-pre-wrap">{{ d.claim.description }}</p>
+          </mat-card>
 
           @if (d.infoRequests.length) {
-            <section class="card">
-              <h2>Information requests</h2>
+            <mat-card appearance="outlined" class="p-4">
+              <h2 class="mb-2 text-lg">Information requests</h2>
               @for (r of d.infoRequests; track r.id) {
-                <div class="qa">
-                  <p><strong>Q:</strong> {{ r.question }}</p>
-                  <p>@if (r.response) { <strong>A:</strong> {{ r.response }} } @else { <span class="muted">Waiting for the claimant…</span> }</p>
+                <div class="border-slate-200 py-2 [&+&]:border-t dark:border-slate-800">
+                  <p class="m-0"><strong>Q:</strong> {{ r.question }}</p>
+                  <p class="m-0">@if (r.response) { <strong>A:</strong> {{ r.response }} } @else { <span class="text-slate-500">Waiting for the claimant…</span> }</p>
                 </div>
               }
-            </section>
+            </mat-card>
           }
         </div>
 
-        <div>
-          <section class="card">
-            <h2>Actions</h2>
+        <div class="flex flex-col gap-4">
+          <mat-card appearance="outlined" class="p-4">
+            <h2 class="mb-3 text-lg">Actions</h2>
             @if (!isOfficer()) {
-              <p class="muted">Read-only: managers can view claims but not act on them.</p>
+              <p class="text-slate-500">Read-only: managers can view claims but not act on them.</p>
             } @else if (d.claim.status === 'SUBMITTED') {
               <p>This claim is waiting for an officer.</p>
-              <button class="primary" [disabled]="busy()" (click)="run(api.assign(id()))">Pick up this claim</button>
+              <div><button mat-flat-button [disabled]="busy()" (click)="run(api.assign(id()))">Pick up this claim</button></div>
             } @else if (!isMine()) {
-              <p class="muted">Assigned to {{ d.claim.assigneeName }}. Only they can act on it.</p>
+              <p class="text-slate-500">Assigned to {{ d.claim.assigneeName }}. Only they can act on it.</p>
             } @else if (d.claim.status === 'SETTLED' || d.claim.status === 'REJECTED') {
-              <p class="muted">This claim is closed.</p>
+              <p class="text-slate-500">This claim is closed.</p>
             } @else {
-              <div class="action-buttons">
+              <div class="flex flex-wrap gap-2">
                 @if (d.claim.status === 'UNDER_REVIEW') {
-                  <button (click)="open('info')">Request information</button>
-                  <button (click)="open('approve')">Approve</button>
-                  <button class="danger" (click)="open('reject')">Reject</button>
+                  <button mat-stroked-button (click)="open('info')">Request information</button>
+                  <button mat-stroked-button (click)="open('approve')">Approve</button>
+                  <button mat-stroked-button class="!text-red-700 dark:!text-red-300" (click)="open('reject')">Reject</button>
                 }
-                @if (d.claim.status === 'APPROVED') { <button class="primary" (click)="open('settle')">Settle</button> }
-                <button (click)="open('reserve')">Adjust reserve</button>
+                @if (d.claim.status === 'APPROVED') { <button mat-flat-button (click)="open('settle')">Settle</button> }
+                <button mat-stroked-button (click)="open('reserve')">Adjust reserve</button>
               </div>
-              @if (d.claim.status === 'PENDING_INFO') { <p class="muted">Waiting for the claimant to answer.</p> }
+              @if (d.claim.status === 'PENDING_INFO') { <p class="text-slate-500">Waiting for the claimant to answer.</p> }
 
-              @switch (action()) {
-                @case ('info') {
-                  <form (ngSubmit)="run(api.requestInfo(id(), text.trim()))" #f="ngForm" class="action-form">
-                    <label>Question for the claimant <textarea name="q" rows="3" required maxlength="2000" [(ngModel)]="text"></textarea></label>
-                    <div class="actions"><button type="button" (click)="open(null)">Cancel</button><button class="primary" [disabled]="busy() || f.invalid">Send request</button></div>
-                  </form>
-                }
-                @case ('approve') {
-                  <form (ngSubmit)="run(api.approve(id(), amount!))" #f="ngForm" class="action-form">
-                    <label>Reserve ({{ d.claim.currency }}) <input name="a" type="number" min="0" step="0.01" required [(ngModel)]="amount"></label>
-                    <p class="hint">The amount set aside for this claim. It counts towards exposure until the claim is settled.</p>
-                    <div class="actions"><button type="button" (click)="open(null)">Cancel</button><button class="primary" [disabled]="busy() || f.invalid">Approve</button></div>
-                  </form>
-                }
-                @case ('reject') {
-                  <form (ngSubmit)="run(api.reject(id(), text.trim()))" #f="ngForm" class="action-form">
-                    <label>Reason (shown to the claimant) <textarea name="r" rows="3" required maxlength="500" [(ngModel)]="text"></textarea></label>
-                    <div class="actions"><button type="button" (click)="open(null)">Cancel</button><button class="danger" [disabled]="busy() || f.invalid">Reject claim</button></div>
-                  </form>
-                }
-                @case ('settle') {
-                  <form (ngSubmit)="run(api.settle(id(), amount!))" #f="ngForm" class="action-form">
-                    <label>Settlement amount ({{ d.claim.currency }}) <input name="a" type="number" min="0" step="0.01" required [(ngModel)]="amount"></label>
-                    <p class="hint">Cannot exceed the policy's coverage limit. Settling closes the claim.</p>
-                    <div class="actions"><button type="button" (click)="open(null)">Cancel</button><button class="primary" [disabled]="busy() || f.invalid">Settle claim</button></div>
-                  </form>
-                }
-                @case ('reserve') {
-                  <form (ngSubmit)="run(api.adjustReserve(id(), amount!))" #f="ngForm" class="action-form">
-                    <label>New reserve ({{ d.claim.currency }}) <input name="a" type="number" min="0" step="0.01" required [(ngModel)]="amount"></label>
-                    <div class="actions"><button type="button" (click)="open(null)">Cancel</button><button class="primary" [disabled]="busy() || f.invalid">Save reserve</button></div>
-                  </form>
-                }
+              @if (action(); as a) {
+                <form class="mt-4 flex flex-col gap-1 border-t border-slate-200 pt-4 dark:border-slate-800" (ngSubmit)="submitAction(a)" #f="ngForm">
+                  @switch (a) {
+                    @case ('info') {
+                      <mat-form-field appearance="outline"><mat-label>Question for the claimant</mat-label>
+                        <textarea matInput name="q" rows="3" required maxlength="2000" [(ngModel)]="text"></textarea></mat-form-field>
+                    }
+                    @case ('reject') {
+                      <mat-form-field appearance="outline"><mat-label>Reason (shown to the claimant)</mat-label>
+                        <textarea matInput name="r" rows="3" required maxlength="500" [(ngModel)]="text"></textarea></mat-form-field>
+                    }
+                    @default {
+                      <mat-form-field appearance="outline"><mat-label>{{ amountLabel(a) }} ({{ d.claim.currency }})</mat-label>
+                        <input matInput name="a" type="number" min="0" step="0.01" required [(ngModel)]="amount">
+                        <mat-hint>{{ a === 'settle' ? 'Cannot exceed the policy coverage limit. Settling closes the claim.' : 'Set aside for this claim; counts towards exposure until settled.' }}</mat-hint>
+                      </mat-form-field>
+                    }
+                  }
+                  <div class="mt-2 flex justify-end gap-2">
+                    <button mat-button type="button" (click)="open(null)">Cancel</button>
+                    <button mat-flat-button type="submit" [disabled]="busy() || f.invalid">{{ submitLabel(a) }}</button>
+                  </div>
+                </form>
               }
             }
-            @if (actionError()) { <p class="error" role="alert">{{ actionError() }}</p> }
-          </section>
+            @if (actionError()) { <p class="m-0 mt-2 text-red-700 dark:text-red-300" role="alert">{{ actionError() }}</p> }
+          </mat-card>
 
-          <section class="card">
-            <h2>Timeline</h2>
+          <mat-card appearance="outlined" class="p-4">
+            <h2 class="mb-3 text-lg">Timeline</h2>
             <cd-timeline [entries]="d.timeline" [currency]="d.claim.currency" />
-          </section>
+          </mat-card>
         </div>
       </div>
-    } @else if (error()) { <p class="error" role="alert">{{ error() }}</p> } @else { <p class="muted">Loading…</p> }`,
+    } @else if (error()) { <p class="text-red-700" role="alert">{{ error() }}</p> } @else { <mat-progress-bar mode="indeterminate" /> }`,
 })
 export class WorkbenchComponent {
   id = input.required<string>();
@@ -150,6 +142,22 @@ export class WorkbenchComponent {
     this.actionError.set(null);
     this.text = '';
     this.amount = a === 'reserve' || a === 'settle' ? this.detail()?.claim.reserveAmount ?? null : null;
+  }
+
+  amountLabel(a: Action) { return a === 'approve' ? 'Reserve' : a === 'settle' ? 'Settlement amount' : 'New reserve'; }
+  submitLabel(a: Action) {
+    return ({ info: 'Send request', approve: 'Approve', reject: 'Reject claim', settle: 'Settle claim', reserve: 'Save reserve' } as const)[a!];
+  }
+  submitAction(a: Action) {
+    const id = this.id();
+    switch (a) {
+      case 'info': return this.run(this.api.requestInfo(id, this.text.trim()));
+      case 'reject': return this.run(this.api.reject(id, this.text.trim()));
+      case 'approve': return this.run(this.api.approve(id, this.amount!));
+      case 'settle': return this.run(this.api.settle(id, this.amount!));
+      case 'reserve': return this.run(this.api.adjustReserve(id, this.amount!));
+      default: return;
+    }
   }
 
   run(call: Observable<ClaimDetail>) {

@@ -99,3 +99,22 @@ Tooling: `npm ci` rejected a lockfile that npm had just generated in the same im
 the image uses `npm install` against the committed lockfile. Trade-off noted in the Dockerfile.
 Verified end to end in a browser: claimant submits -> officer picks up and approves 8,000 MYR -> manager dashboard
 shows the exposure and workload via Kafka. No automated frontend tests yet (gap).
+
+## Block 5b — Angular Material + Tailwind (directed by me)
+Asked: rebuild the UI on Angular Material components with Tailwind for layout.
+Decided before writing code: Material owns components, Tailwind owns layout/spacing, Tailwind `preflight` OFF —
+its global reset is known to strip Material's button and form-field styles. System font instead of Roboto because
+the CSP (`default-src 'self'`) blocks Google Fonts.
+Found in the browser (twice):
+1. Status pills and bordered boxes had no borders. With preflight off, Tailwind's `border` sets only border-width;
+   the `border-style: solid` default lives in preflight. Rejected adding `border-solid` per element: an element with
+   no width utility would then get the browser's default 3px border.
+2. My first fix restored preflight's border rule globally at zero specificity (`:where(*)`). It broke Material's
+   outlined text fields: a stray vertical line inside every field. Diagnosed by reading computed styles: MDC's notched
+   outline sets a width on all four sides of the notch and relies on the DEFAULT `border-style: none` to hide the
+   left/right sides. Zero specificity cannot help when a component relies on a default instead of a rule.
+   Overrode: scope the rule to elements carrying a Tailwind border class (`:where([class*="border"])`). Verified both
+   the pills (solid) and the field outline (clean) by computed style and screenshot.
+Cost recorded: initial bundle 92 kB -> 164 kB transferred (334 kB -> 792 kB raw), almost all Material + theme CSS.
+Budget raised to 800 kB warning on purpose; lazy routes keep screen code out of the initial load.
+Verified: claimant / officer / manager flows in the browser, 0 inline handlers, 0 CSP violations, 0 font requests.

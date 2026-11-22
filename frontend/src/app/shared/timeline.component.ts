@@ -6,13 +6,13 @@ import { EVENT_LABEL, money, when } from './format';
   selector: 'cd-timeline',
   standalone: true,
   template: `
-    <ol class="timeline">
+    <ol class="m-0 list-none border-l-2 border-slate-200 p-0 dark:border-slate-700">
       @for (e of entries(); track $index) {
-        <li>
-          <div class="tl-head"><strong>{{ label(e.type) }}</strong><time>{{ when(e.at) }}</time></div>
-          @if (text(e); as t) { <p class="muted">{{ t }}</p> }
+        <li class="relative pb-4 pl-4 before:absolute before:-left-[6px] before:top-2 before:h-2.5 before:w-2.5 before:rounded-full before:bg-blue-600 before:content-['']">
+          <div class="flex flex-wrap justify-between gap-2"><strong>{{ label(e.type) }}</strong><time class="text-sm text-slate-500">{{ when(e.at) }}</time></div>
+          @if (text(e); as t) { <p class="m-0 mt-0.5 text-slate-500 dark:text-slate-400">{{ t }}</p> }
         </li>
-      } @empty { <li class="muted">No activity yet.</li> }
+      } @empty { <li class="text-slate-500">No activity yet.</li> }
     </ol>`,
 })
 export class TimelineComponent {

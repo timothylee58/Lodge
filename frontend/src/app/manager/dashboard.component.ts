@@ -4,81 +4,90 @@ import { EMPTY, catchError, forkJoin, switchMap, timer } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { ClaimStatus, ExposureReport, StatusReport, WorkloadReport } from '../core/models';
 import { STATUS_LABEL, money, problem, when } from '../shared/format';
+import { MATERIAL } from '../shared/material';
 
 const ORDER: ClaimStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_INFO', 'APPROVED', 'SETTLED', 'REJECTED'];
 
 @Component({
   selector: 'cd-dashboard',
   standalone: true,
+  imports: [...MATERIAL],
   template: `
-    <div class="page-head">
-      <h1>Dashboard</h1>
-      <p class="muted small" aria-live="polite">
-        @if (exposure(); as x) {
-          Data as of {{ when(x.asOf) }} · refreshed {{ when(x.generatedAt) }}
-        }
-        <br>Reports are built from events and can lag a few seconds behind live claims.
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <h1 class="text-2xl">Dashboard</h1>
+      <p class="m-0 text-right text-sm text-slate-500" aria-live="polite">
+        @if (exposure(); as x) { Data as of {{ when(x.asOf) }} · refreshed {{ when(x.generatedAt) }}<br> }
+        Built from events; can lag a few seconds behind live claims.
       </p>
     </div>
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <p class="text-red-700 dark:text-red-300" role="alert">{{ error() }}</p> }
 
     @if (exposure(); as x) {
-      <section class="kpis">
+      <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         @for (t of x.totalsByCurrency; track t.currency) {
-          <div class="card kpi">
-            <span class="muted">Open exposure · {{ t.currency }}</span>
-            <strong>{{ money(t.exposure, t.currency) }}</strong>
-            <span class="muted">{{ t.openClaims }} open claim{{ t.openClaims === 1 ? '' : 's' }}</span>
-          </div>
+          <mat-card appearance="outlined" class="p-4">
+            <span class="text-sm text-slate-500">Open exposure · {{ t.currency }}</span>
+            <strong class="text-2xl tabular-nums">{{ money(t.exposure, t.currency) }}</strong>
+            <span class="text-sm text-slate-500">{{ t.openClaims }} open claim{{ t.openClaims === 1 ? '' : 's' }}</span>
+          </mat-card>
         } @empty {
-          <div class="card kpi"><span class="muted">Open exposure</span><strong>—</strong><span class="muted">No open claims</span></div>
+          <mat-card appearance="outlined" class="p-4"><span class="text-sm text-slate-500">Open exposure</span><strong class="text-2xl">—</strong><span class="text-sm text-slate-500">No open claims</span></mat-card>
         }
         @if (workload(); as w) {
-          <div class="card kpi"><span class="muted">Waiting for an officer</span><strong>{{ w.unassignedClaims }}</strong><span class="muted">unassigned claims</span></div>
+          <mat-card appearance="outlined" class="p-4"><span class="text-sm text-slate-500">Waiting for an officer</span>
+            <strong class="text-2xl tabular-nums">{{ w.unassignedClaims }}</strong><span class="text-sm text-slate-500">unassigned claims</span></mat-card>
         }
       </section>
-      <p class="hint">Totals are per currency. Different currencies are never added together (no FX conversion).</p>
+      <p class="m-0 text-sm text-slate-500">Totals are per currency. Different currencies are never added together (no FX conversion).</p>
 
-      <div class="grid-2">
-        <section class="card">
-          <h2>Exposure by market</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Market</th><th>Type</th><th class="num">Open</th><th class="num">Exposure</th></tr></thead>
-            <tbody>
-              @for (r of x.rows; track r.market + r.type + r.currency) {
-                <tr><td>{{ r.market }}</td><td>{{ r.type }}</td><td class="num">{{ r.openClaims }}</td><td class="num">{{ money(r.exposure, r.currency) }}</td></tr>
-              } @empty { <tr><td colspan="4" class="muted center">No open claims.</td></tr> }
-            </tbody>
-          </table></div>
-        </section>
+      <div class="grid items-start gap-4 md:grid-cols-2">
+        <mat-card appearance="outlined" class="p-4">
+          <h2 class="mb-2 text-lg">Exposure by market</h2>
+          <table mat-table [dataSource]="x.rows" class="w-full">
+            <ng-container matColumnDef="market"><th mat-header-cell *matHeaderCellDef>Market</th><td mat-cell *matCellDef="let r">{{ r.market }}</td></ng-container>
+            <ng-container matColumnDef="type"><th mat-header-cell *matHeaderCellDef>Type</th><td mat-cell *matCellDef="let r">{{ r.type }}</td></ng-container>
+            <ng-container matColumnDef="open"><th mat-header-cell *matHeaderCellDef class="!text-right">Open</th><td mat-cell *matCellDef="let r" class="!text-right">{{ r.openClaims }}</td></ng-container>
+            <ng-container matColumnDef="exposure"><th mat-header-cell *matHeaderCellDef class="!text-right">Exposure</th>
+              <td mat-cell *matCellDef="let r" class="!text-right tabular-nums">{{ money(r.exposure, r.currency) }}</td></ng-container>
+            <tr mat-header-row *matHeaderRowDef="expCols"></tr><tr mat-row *matRowDef="let row; columns: expCols"></tr>
+            <tr class="mat-mdc-row" *matNoDataRow><td class="p-4 text-center text-slate-500" [attr.colspan]="4">No open claims.</td></tr>
+          </table>
+        </mat-card>
 
-        <section class="card">
-          <h2>Officer workload</h2>
+        <mat-card appearance="outlined" class="p-4">
+          <h2 class="mb-2 text-lg">Officer workload</h2>
           @if (workload(); as w) {
-            <div class="table-wrap"><table>
-              <thead><tr><th>Officer</th><th class="num">Reviewing</th><th class="num">Waiting info</th><th class="num">Approved</th><th class="num">Open</th></tr></thead>
-              <tbody>
-                @for (o of w.officers; track o.assigneeId) {
-                  <tr><td>{{ o.assigneeName }}</td><td class="num">{{ o.underReview }}</td><td class="num">{{ o.pendingInfo }}</td><td class="num">{{ o.approved }}</td><td class="num"><strong>{{ o.openClaims }}</strong></td></tr>
-                } @empty { <tr><td colspan="5" class="muted center">No officer has picked up a claim yet.</td></tr> }
-              </tbody>
-            </table></div>
+            <table mat-table [dataSource]="w.officers" class="w-full">
+              <ng-container matColumnDef="name"><th mat-header-cell *matHeaderCellDef>Officer</th><td mat-cell *matCellDef="let o">{{ o.assigneeName }}</td></ng-container>
+              <ng-container matColumnDef="review"><th mat-header-cell *matHeaderCellDef class="!text-right">Reviewing</th><td mat-cell *matCellDef="let o" class="!text-right">{{ o.underReview }}</td></ng-container>
+              <ng-container matColumnDef="info"><th mat-header-cell *matHeaderCellDef class="!text-right">Waiting info</th><td mat-cell *matCellDef="let o" class="!text-right">{{ o.pendingInfo }}</td></ng-container>
+              <ng-container matColumnDef="approved"><th mat-header-cell *matHeaderCellDef class="!text-right">Approved</th><td mat-cell *matCellDef="let o" class="!text-right">{{ o.approved }}</td></ng-container>
+              <ng-container matColumnDef="open"><th mat-header-cell *matHeaderCellDef class="!text-right">Open</th><td mat-cell *matCellDef="let o" class="!text-right font-bold">{{ o.openClaims }}</td></ng-container>
+              <tr mat-header-row *matHeaderRowDef="wlCols"></tr><tr mat-row *matRowDef="let row; columns: wlCols"></tr>
+              <tr class="mat-mdc-row" *matNoDataRow><td class="p-4 text-center text-slate-500" [attr.colspan]="5">No officer has picked up a claim yet.</td></tr>
+            </table>
           }
-        </section>
+        </mat-card>
       </div>
 
-      <section class="card">
-        <h2>Claims by status and market</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Market</th>@for (s of order; track s) { <th class="num">{{ label[s] }}</th> }</tr></thead>
-          <tbody>
-            @for (m of markets(); track m) {
-              <tr><td>{{ m }}</td>@for (s of order; track s) { <td class="num">{{ count(m, s) || '·' }}</td> }</tr>
-            } @empty { <tr><td [attr.colspan]="order.length + 1" class="muted center">No claims yet.</td></tr> }
-          </tbody>
-        </table></div>
-      </section>
-    } @else if (!error()) { <p class="muted">Loading…</p> }`,
+      <mat-card appearance="outlined" class="p-4">
+        <h2 class="mb-2 text-lg">Claims by status and market</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-sm">
+            <thead><tr class="border-b border-slate-200 dark:border-slate-800">
+              <th class="p-2 text-left font-medium text-slate-500">Market</th>
+              @for (s of order; track s) { <th class="p-2 text-right font-medium text-slate-500">{{ label[s] }}</th> }
+            </tr></thead>
+            <tbody>
+              @for (m of markets(); track m) {
+                <tr class="border-b border-slate-100 dark:border-slate-800"><td class="p-2">{{ m }}</td>
+                  @for (s of order; track s) { <td class="p-2 text-right tabular-nums">{{ count(m, s) || '·' }}</td> }</tr>
+              } @empty { <tr><td class="p-4 text-center text-slate-500" [attr.colspan]="order.length + 1">No claims yet.</td></tr> }
+            </tbody>
+          </table>
+        </div>
+      </mat-card>
+    } @else if (!error()) { <mat-progress-bar mode="indeterminate" /> }`,
 })
 export class DashboardComponent {
   private api = inject(ApiService);
@@ -88,6 +97,8 @@ export class DashboardComponent {
   status = signal<StatusReport | null>(null);
   error = signal<string | null>(null);
   order = ORDER;
+  expCols = ['market', 'type', 'open', 'exposure'];
+  wlCols = ['name', 'review', 'info', 'approved', 'open'];
   label = STATUS_LABEL;
   money = money; when = when;
 
