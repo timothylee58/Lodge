@@ -4,6 +4,21 @@ Claims intake and handling: claimants report incidents and track them, officers 
 Backend-first; see `docs/adr/0001-modular-monolith-plus-reporting.md` and `docs/AI_JOURNAL.md`.
 How the AI was directed, challenged and overridden (with evidence): `docs/DIRECTION_LOG.md`.
 
+## Deliverables
+
+| # | Deliverable | Where |
+|---|---|---|
+| 1 | Git history showing the development process | `git log` — block-by-block commits, then review-driven `fix:` commits |
+| 2 | Working application, started locally | `docker compose up --build` -> http://localhost:4200 (below) |
+| 3 | AI working journal (asked / accepted / challenged / overrode) | `docs/AI_JOURNAL.md`; curated view with evidence: `docs/DIRECTION_LOG.md` |
+| 4 | Supporting documentation | `docs/ARCHITECTURE.md`, `docs/adr/`, `docs/RUNBOOK.md`, `docs/PANEL_QA.md` |
+
+**No public hosting.** This repository is source only. The app runs on your machine via Docker Compose, with every
+port bound to `127.0.0.1`.
+
+**Panel questions** (two services, Kafka down, concurrent assign, API contract, exposure staleness, rejected AI code):
+answered with code and test references in `docs/PANEL_QA.md`.
+
 ## Run locally
 
 **Everything in containers (one command):**
